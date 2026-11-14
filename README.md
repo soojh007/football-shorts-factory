@@ -289,3 +289,40 @@ Google/YouTube account configuration, quota, API project status and platform pro
 References: official [upload guide](https://developers.google.com/youtube/data/guides/uploading_a_video), [videos.insert](https://developers.google.com/youtube/data/reference/rest/v3/videos/insert), and [channels.list](https://developers.google.com/youtube/data/reference/rest/v3/channels/list).
 
 Validation on 14 November 2026: 206 tests pass, including private defaults, explicit visibility, channel mismatch prevention, resumable chunks, repeat-upload prevention, ambiguous upload failures, token permissions, local preview and missing credentials. The actual 55.87-second MP4 passed local upload preparation for the configured channel, with private visibility. No Google OAuth sign-in or live YouTube upload was performed because client credentials are not configured yet.
+
+## International-friendly prediction videos
+
+A separate forecast workflow now supports the requested **Friendly International competition (Sportmonks league ID 1082)** without requiring Sportmonks' paid Predictions add-on. The completed EPL recap remains unchanged and private on YouTube.
+
+```sh
+# Collect current pre-match data, build the forecast and script:
+python -m backend.predict --fixture 19878000 --league-id 1082
+# Also create speech, aligned captions and a local video:
+python -m backend.predict --fixture 19878000 --league-id 1082 --render
+# Reuse the saved source snapshot and cached narration/timestamps:
+python -m backend.predict --fixture 19878000 --league-id 1082 --reuse-source --render
+```
+
+The selected first draft is **Japan vs Brazil**, fixture `19878000`, scheduled for **14 November 2026, 18:15 Singapore time** according to the retrieved Sportmonks fixture. This is a speculative forecast, not an actual final score. It is never uploaded by these commands. The existing completed-match uploader deliberately does not accept prediction artifacts; any future upload integration must preserve the forecast labels and metadata.
+
+The collector retrieves the not-started fixture and participants, then paginates each team's prior 365 days of results in date windows no longer than 100 days. It retains only completed regulation-time results in the selected competition with kickoff strictly before the evidence cutoff, maps scores using participant IDs and `CURRENT` descriptions, deduplicates fixtures, and uses the latest five valid results. At least three results per team are required. The script and graphics state the actual sample size. Future/started/postponed fixtures cannot be presented as new pre-match predictions. With `--reuse-source`, the original evidence cutoff is retained, but the target kickoff is checked against the current clock so old snapshots cannot create retrospective predictions after kickoff.
+
+Forecast method (`recent-form-poisson-v1`): shrink each team's scored/conceded goal average toward an explicitly assumed prior of **1.4 goals per team per game**, weighted as three prior games. This is an illustrative prior, not a measured league average. Average the team's smoothed scoring rate with the other team's smoothed conceding rate. No home boost is assumed (multiplier 1.0). An independent Poisson score grid from 0 to 15 goals per team produces exploratory home/draw/away probabilities, renormalized over retained mass. The outcome with the greatest total probability is selected, then the most probable score **conditional on that outcome** is used as the speculative score pick. The overall modal score can differ. Parameters, retained mass, rates and probabilities are saved for audit, but percentages are not displayed as calibrated confidence in the video.
+
+This model is **not backtested or calibrated**. It does not adjust for opponent strength, venue-specific form, injuries, squad rotation, rest, transfers or confirmed lineups. Friendly-match samples can be sparse and cover many months. Goal-rate estimates are model outputs, not observed xG. An attractive score pick does not establish predictive accuracy; prospective evaluation against later results is needed before making accuracy claims. No betting recommendations or guaranteed outcomes are generated.
+
+The source/results-only narration is assembled from verified counts and model output rather than free-form AI football claims. Speech uses the existing OpenAI configuration and may incur charges. Caption transcription also uses the existing API. Matching script/audio hashes reuse narration and timestamp caches; changed scripts regenerate dependent artifacts. The video has a distinct cream/coral design with country badges, alternating form cards, a clearly labeled prediction reveal, Singapore kickoff time, limitations and visible AI-voice/speculative-prediction disclosure. Unsupported country badges fall back to text. No match footage is used.
+
+Files in ignored `generated/` include:
+
+- `19878000_prediction_source.json`: raw fixture, historical fixture lists and evidence cutoff.
+- `19878000_prediction.json`: matched form results, model assumptions, exploratory probabilities, score pick, limitations, sectioned script and review flag.
+- `19878000_prediction_script.txt`, `_prediction_narration.wav`, `_prediction_narration.json`.
+- `19878000_prediction_captions.json`, `_prediction_captions.srt`.
+- `19878000_prediction.mp4`, `_prediction_poster.png`, `_prediction_render.json`.
+
+The rendered prediction must use 30–60 second narration, pass audio-word alignment, and pass the same MP4 codec/dimension/duration checks as recap videos. The CLI does not start an upload. Inspect the draft's spoken team names, timing, current kickoff, evidence dates and speculative labels before use. Refresh data before release; cached source data is not a substitute for current team news.
+
+Tests cover competition mapping, recent-form scores, deduplication, insufficient samples, future-result exclusion, rejection after kickoff, symmetric neutral forecasts, probabilities summing to one, consistency of the selected outcome/score, singular/plural narration, country-card rendering and requests without the paid predictions include. All 224 tests pass under Python 3.12. Live Sportmonks collection returned five recent friendlies per team for this draft: Japan 8 goals for/2 against and Brazil 17 for/6 against. The resulting exploratory pick is Japan 1–2 Brazil. Sample frames were visually inspected; model calibration and full subjective quality are not established by these checks.
+
+Final draft verification: the revised Japan–Brazil forecast renders at **35.50 seconds**, 1080×1920 with H.264/AAC. The final caption transcription matches 100 percent of normalized script words after simplifying ambiguous narration; caption text exactly preserves the script. The score, form cards, Singapore kickoff and closing disclaimer were visually inspected. This checks media consistency, not model accuracy or subjective voice quality. The forecast has not been uploaded, and the earlier recap remains private.
