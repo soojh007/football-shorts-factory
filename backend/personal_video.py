@@ -67,7 +67,7 @@ def draw_personal_frame(prediction,caption,progress,animation):
         draw.polygon([(488,805),(592,805),(540,930)],fill=ORANGE)
         text_block(draw,'THE GROUND MATTERS',(66,1120,1014,1230),66,LIME,'left',2)
         text_block(draw,venue.get('name') or venue.get('city') or 'Venue information unavailable',(66,1250,1014,1380),43,WHITE,'left',3)
-        status='Neutral venue' if venue.get('neutral') is True else (venue.get('city') or 'Venue country checked')
+        status='Neutral venue' if venue.get('neutral') is True else (venue.get('city') or ('Venue country checked' if venue.get('country_id') is not None else 'Venue advantage not assumed'))
         text_block(draw,status,(66,420,1014,485),31,WHITE,'left',1)
     elif kind=='pick':
         photo(image,draw,selected['home'],(64,450,506,920),animation)
