@@ -171,3 +171,9 @@ def test_cli_bad_speed(speed):
     with pytest.raises(SystemExit) as exc:
         main(['--fixture', '19427552', '--speed', speed])
     assert exc.value.code == 2
+
+
+def test_personal_delivery_instructions_reach_api(session):
+    instructions='Speak like a football fan sharing my own take with a friend.'
+    SpeechClient(api_key='synthetic-key',session=session,instructions=instructions).generate('My pick is a draw.')
+    assert session.post.call_args.kwargs['json']['instructions']==instructions

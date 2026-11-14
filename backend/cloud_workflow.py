@@ -114,7 +114,9 @@ def main(argv=None):
         from backend.speech import SpeechError
         from backend.captions import CaptionError
         from backend.video import VideoError
-        safe=(CloudStateError,PredictionError,SportmonksError,YouTubeError,SpeechError,CaptionError,VideoError)
+        from backend.research import ResearchError
+        from backend.player_media import MediaError
+        safe=(CloudStateError,PredictionError,SportmonksError,YouTubeError,SpeechError,CaptionError,VideoError,ResearchError,MediaError)
         message=str(exc) if isinstance(exc,safe) else 'Cloud workflow could not finish. Check setup and YouTube Studio before retrying an uncertain upload.'
         print(message,file=sys.stderr)
         summary('Workflow stopped',message)

@@ -73,7 +73,7 @@ class SpeechClient:
     URL = "https://api.openai.com/v1/audio/speech"
 
     def __init__(self, api_key=None, model="gpt-4o-mini-tts", voice="coral", speed=1.0,
-                 session=None, timeout=60):
+                 session=None, timeout=60, instructions=None):
         self._key = api_key if api_key is not None else os.getenv("OPENAI_API_KEY", "")
         if not self._key.strip():
             raise SpeechError("Set OPENAI_API_KEY in .env to generate narration.")
@@ -84,6 +84,7 @@ class SpeechClient:
         self.model, self.voice, self.speed = model, voice, speed
         self.session = session or requests.Session()
         self.timeout = timeout
+        self.instructions = instructions
 
     def generate(self, script):
         if not isinstance(script, str) or not script.strip() or len(script) > 4096:
@@ -91,7 +92,7 @@ class SpeechClient:
         body = {"model": self.model, "voice": self.voice, "input": script,
                 "response_format": "wav", "speed": self.speed}
         if self.model == "gpt-4o-mini-tts":
-            body["instructions"] = (
+            body["instructions"] = self.instructions or (
                 "Read the supplied script exactly, in clear English with a British football presenter tone. "
                 "Use a brisk, natural delivery suited to a short match recap. Do not add words or sound effects."
             )

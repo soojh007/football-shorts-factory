@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "fetched_at": "2026-11-14T13:13:03.118956+00:00",
+  "window_hours": 2,
+  "competition_id": 1082,
+  "matches": [
+    {
+      "fixture_id": 19904927,
+      "home": "Palestine",
+      "away": "Iran",
+      "kickoff": "2026-11-14T15:00:00+00:00",
+      "kickoff_singapore": "14 Nov 23:00 SGT",
+      "minutes_to_kickoff": 107,
+      "lineups_status": "not_checked",
+      "creation_window_open": false
+    }
+  ]
+}
