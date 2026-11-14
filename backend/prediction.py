@@ -141,3 +141,15 @@ def make_prediction(fixture, histories, *, as_of=None, league_id=8):
             'as_of': as_of.isoformat(), 'teams': teams, 'form': forms, 'forecast': forecast,
             'title': f"{h} vs {a} | Score prediction", 'script': script,
             'word_count': len(script.split()), 'sections': sections, 'requires_editorial_review': True}
+
+
+def prediction_content_hash(prediction):
+    """Exclude retrieval/check timestamps, retaining all content-relevant evidence."""
+    import copy
+    import json
+    import hashlib
+    value = copy.deepcopy(prediction)
+    value.pop('as_of', None)
+    if 'lineups' in value:
+        value['lineups'].pop('checked_at', None)
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()

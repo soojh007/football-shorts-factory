@@ -328,3 +328,35 @@ Tests cover competition mapping, recent-form scores, deduplication, insufficient
 Final draft verification: the revised Japan–Brazil forecast renders at **35.50 seconds**, 1080×1920 with H.264/AAC. The final caption transcription matches 100 percent of normalized script words after simplifying ambiguous narration; caption text exactly preserves the script. The score, form cards, Singapore kickoff and closing disclaimer were visually inspected. This checks media consistency, not model accuracy or subjective voice quality. The forecast has not been uploaded, and the earlier recap remains private.
 
 Prediction graphics revision (style version 2): the Japan–Brazil draft now uses an animated football illustration, shared-scale goal bars, staged form badges, pitch graphics behind the score reveal and icon-based uncertainty callouts. Original graphic motion is sampled at 8 fps and encoded at 30 fps; caption boundaries are included in the frame timeline. The requested footer text and progress bar are removed. Narration, forecast, source evidence and caption text are unchanged and reused from cache without new API calls. The revised MP4 remains 35.50 seconds with 100 percent normalized-word caption alignment. Opening, bar-growth, completed-bar, score and caveat frames were visually inspected. All 224 tests pass. The versioned local preview is `generated/19878000_prediction_v2.mp4`; nothing was uploaded to YouTube.
+
+## Match-to-video workflow with confirmed lineups
+
+Start the local interface:
+
+```sh
+cd "/Users/soojh007/football shorts"
+source .venv/bin/activate
+python -m backend.dashboard
+```
+
+Open **http://127.0.0.1:8765**. Enter the teams (for example `Japan vs Brazil`) or a fixture ID, choose the fixture, and check its official starting elevens. Times are shown in Singapore time. The first version searches Friendly International (1082) fixtures over the next 21 days. Once ready, choose **Create video & upload privately** or **Create video only**. Keep the app running while the job finishes. The local interface is not an always-on hosted service; your Mac and the app must stay running.
+
+The one-command equivalent is:
+
+```sh
+python -m backend.workflow --fixture 19878000
+# Local video only:
+python -m backend.workflow --fixture 19878000 --no-upload
+```
+
+The workflow is deliberately for your final-hour selection process. It requires `0 < time to kickoff <= 60 minutes`, a not-started fixture, an explicit Sportmonks `lineup-confirmed` metadata value of boolean true, and exactly 11 distinct valid starters for each participant. Expected lineups can be returned before the official teams; their mere presence never counts as confirmation. Type 572 (`lineup-confirmed`) and starting-player type 11 follow the verified Sportmonks definitions. If a lineup is missing, predicted, partial or inconsistent, the job stops in a waiting state before any paid generation. Refresh the official lineup check later; it does not automatically poll the provider. References: [lineups and formations](https://docs.sportmonks.com/v3/tutorials-and-guides/tutorials/lineups-and-formations), [confirmation metadata](https://docs.sportmonks.com/v3/tutorials-and-guides/tutorials/includes/tips-and-tricks).
+
+The steps are kickoff/lineup verification, YouTube account preflight (when uploading), fresh historical match-fact collection, prediction/script assembly, confirmed team-sheet scenes, narration, audio-aligned captions, animated MP4 verification, final lineup/kickoff recheck, and private upload. Both full starting elevens appear in the video. The forecast remains an exploratory recent-form model: showing official lineups does **not** mean the model quantifies player quality. The narration and limitations make that distinction and no longer claim that lineups are unavailable when official team sheets are present.
+
+Cached narration, captions and finished video are reused only when matching content/settings/hashes allow it. Changed starters invalidate the video, while retrieval timestamps alone do not. Before upload, the current official XI and kickoff are fetched again; a lineup change, missing confirmation, elapsed kickoff or rescheduling stops the upload and asks you to rerun. The generated prediction title/description identify the international friendly, score pick, AI voice and model limitations. Upload visibility is fixed to **private** in this workflow. It cannot publish publicly, schedule a public release or silently change an existing video's visibility.
+
+Prediction uploads use a separate `19878000_prediction_youtube_upload.json` receipt, so they cannot collide with the earlier recap receipt. Existing successful uploads are reused rather than duplicated; mismatched/uncertain receipts require Studio reconciliation just like the earlier uploader. A per-fixture file lock prevents simultaneous UI/CLI runs from writing over the same assets. If the process is killed, a stale `generated/.<fixture>_workflow.lock` can remain; confirm no job is still running before removing it. Interrupted remote uploads still require checking Studio before removing any upload receipt.
+
+The interface runs only on loopback, checks the Host/Origin and requires a per-process CSRF token for job creation. Match input is passed to Python functions, not a shell command. Jobs execute serially with progress messages; exceptions shown in the interface are restricted to safe domain errors. Job snapshots are saved in ignored `generated/workflow_jobs/`, with a final `19878000_workflow_result.json` for completed runs. The current UI tracks jobs in memory while the app is running; a server restart does not resume a running job automatically. Rerun through the same workflow after checking any uncertain upload record. Account keys/OAuth credentials remain in the existing ignored local configuration.
+
+Validation: all 243 tests pass, covering explicit lineup confirmation, incomplete/duplicate starting XIs, the final-hour gate, future-result safeguards, content hashes, private prediction metadata, no-upload behavior, account checks, lineup changes before upload and HTTP CSRF protection. Live read-only testing found Japan–Brazil and correctly returned a waiting status because it is more than an hour before kickoff; the provider had also returned 22 lineup rows with confirmation false. A live confirmed-lineup end-to-end upload has not been performed. Existing API, rendering and recap upload steps were live-tested separately in the earlier milestones.

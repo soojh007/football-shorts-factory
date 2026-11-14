@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from backend.video import text_block
 
 INK, CREAM, CORAL, GREEN = '#122a30', '#f4f1e7', '#fc654c', '#c0ff69'
-STYLE_VERSION = 2
+STYLE_VERSION = 3
 
 
 def section_at(prediction, word):
@@ -121,6 +121,15 @@ def draw_prediction_frame(prediction, caption, progress, *, animation=1.0):
             text_block(draw,str(form[field]),(794,y+16,972,y+128),88,color,max_lines=1)
         form_badges(draw,form['sequence'],1172,phase)
         text_block(draw,'RECENT RESULTS / NEWEST FIRST',(104,1270,976,1311),22,CREAM,max_lines=1)
+    elif kind in ('lineup_home', 'lineup_away'):
+        side = kind.removeprefix('lineup_')
+        name = prediction['teams'][side]['name']
+        text_block(draw,f'{name.upper()} / CONFIRMED XI',(100,704,980,770),31,GREEN,'left',1)
+        for index, player in enumerate(prediction['lineups'][side]['starters']):
+            y = 793 + index * 45
+            jersey = str(player['jersey_number']) if type(player['jersey_number']) is int else '·'
+            text_block(draw,jersey,(102,y,174,y+42),25,CORAL,max_lines=1)
+            text_block(draw,player['name'],(192,y,976,y+42),27,CREAM,'left',1)
     elif kind=='pick':
         text_block(draw,'MY SCORE PREDICTION',(102,714,978,786),36,GREEN,max_lines=1)
         pitch(draw,(124,825,956,1192),'#27494b',3)
