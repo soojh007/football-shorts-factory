@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 from backend.analyze import save_text
 from backend.lineups import LineupsNotReady, add_lineup_sections, confirmed_lineups
+from backend.contextual_prediction import contextual_prediction,venue_context
+from backend.research import ResearchClient
+from backend.player_media import collect_player_media
 from backend.main import ROOT, positive_int, save_json
 from backend.predict import collect, render_prediction
 from backend.prediction import PredictionError, make_prediction, prediction_content_hash, teams_for_preview
@@ -26,7 +29,7 @@ LEAGUE_ID = 1082
 
 
 def lineup_fixture(client, fixture_id):
-    payload = client.fixture_request(str(fixture_id), includes='participants;state;league;lineups.type;metadata.type;formations')
+    payload = client.fixture_request(str(fixture_id), includes='participants;state;league;lineups.type;lineups.player;metadata.type;formations;venue')
     fixture = payload.get('data')
     if not isinstance(fixture, dict) or fixture.get('id') != fixture_id:
         raise PredictionError('The requested fixture is unavailable.')
@@ -67,8 +70,13 @@ def prediction_upload_body(prediction):
     description=(f"International friendly prediction: {h} {score['home']}–{score['away']} {a}.\n"
         'Both official starting elevens were confirmed when this video was created.\n\n'
         f"{prediction['script']}\n\n{DISCLOSURE}\n"
-        'Exploratory recent-form model, not calibrated. Showing the team sheets does not mean individual player strength is modeled.\n'
+        'Experimental lineup- and venue-conditioned forecast, not calibrated. Player/venue coefficients are heuristic, not validated accuracy claims.\n'
         'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #InternationalFriendly')
+    research=(prediction.get('context') or {}).get('web_research') or {}
+    urls=list(dict.fromkeys(claim['source_url'] for claim in research.get('claims',[])))[:3]
+    credits=[f"{asset['name']}: {asset.get('artist','')} / {asset.get('license','')} / {asset.get('source_url','')}" for asset in prediction.get('media_assets',[])]
+    if urls: description+='\n\nResearch sources:\n'+'\n'.join(urls)
+    if credits: description+='\n\nPlayer image credits:\n'+'\n'.join(credits)
     if not title or len(title)>100 or any(char in title+description for char in '<>') or len(description.encode())>5000:
         raise YouTubeError('The generated upload metadata exceeds YouTube limits; review the match names.')
     return {'snippet':{'title':title,'description':description,'categoryId':'17','defaultLanguage':'en',
@@ -93,6 +101,21 @@ def reusable_video(prediction, out):
     except (OSError,ValueError,KeyError,TypeError):
         return False
 
+
+
+def enrich_history(source,now):
+    base=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=LEAGUE_ID)
+    needed={m['fixture_id'] for form in base['form'].values() for m in form['matches']}
+    enriched={}
+    client=PrematchClient()
+    with client.session:
+        for match_id in needed:
+            data=client.fixture_request(str(match_id),includes='participants;scores;state;lineups.details.type;venue;metadata.type').get('data')
+            if not isinstance(data,dict) or data.get('id')!=match_id:
+                raise PredictionError('Historical lineup facts are missing or mismatched.')
+            enriched[match_id]=data
+    source['histories']={side:[enriched.get(match['id'],match) for match in rows] for side,rows in source['histories'].items()}
+    return source
 
 def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     out=Path(out or ROOT/'generated').resolve()
@@ -119,8 +142,18 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
                 service.close()
         report('Retrieving recent friendly results')
         source=collect(client,fixture_id,LEAGUE_ID,now,fixture=fixture)
-    prediction=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=LEAGUE_ID)
-    prediction=add_lineup_sections(prediction,lineups)
+        report('Checking historical lineups, player ratings and venue context')
+        source=enrich_history(source,now)
+    # Validate data sufficiency before paying for web research.
+    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=LEAGUE_ID)
+    report('Researching official announcements and credible reports on the internet')
+    researcher=ResearchClient()
+    with researcher.session:
+        research=researcher.brief(source['fixture'])
+    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=LEAGUE_ID,research=research)
+    save_json(out/f'{fixture_id}_web_research.json',research)
+    report('Preparing real player visuals and first-person narration')
+    prediction['media_assets']=collect_player_media(prediction,out)
     if not 75<=prediction['word_count']<=150:
         raise PredictionError('The narration is outside the video word budget; review the team names.')
     report('Preparing the prediction and confirmed team sheets')
@@ -144,6 +177,8 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         for side in ('home','away'):
             if latest[side]!=lineups[side]:
                 raise LineupsNotReady('The official lineup changed during production. Run again to rebuild the video before upload.')
+        if venue_context(current,prediction['teams']['home']['id'])!=venue_context(fixture,prediction['teams']['home']['id']):
+            raise LineupsNotReady('The venue changed during production. Run again before uploading.')
         if kickoff_utc(current)!=kickoff_utc(fixture):
             raise LineupsNotReady('Kickoff changed during production. Run again with the updated schedule.')
         body=prediction_upload_body(prediction)
@@ -204,7 +239,10 @@ def main(argv=None):
         from backend.speech import SpeechError
         from backend.captions import CaptionError
         from backend.video import VideoError
-        safe=(PredictionError,YouTubeError,SportmonksError,SpeechError,CaptionError,VideoError)
+        from backend.research import ResearchError
+        from backend.player_media import MediaError
+        from backend.research import ResearchError
+        safe=(PredictionError,YouTubeError,SportmonksError,SpeechError,CaptionError,VideoError,ResearchError,MediaError)
         print(str(exc) if isinstance(exc,safe) else 'The workflow could not finish. Check the local setup and retry.',file=sys.stderr)
         return 1
 

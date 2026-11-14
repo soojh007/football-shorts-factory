@@ -32,7 +32,9 @@ def confirmed_lineups(fixture, now, league_id=1082):
             if type(player_id) is not int or player_id <= 0 or not isinstance(name, str) or not name.strip() or player_id in all_players:
                 raise LineupsNotReady('Official team sheets are incomplete or inconsistent. Refresh before creating the video.')
             all_players.add(player_id)
-            starters.append({'player_id': player_id, 'name': name.strip(), 'jersey_number': entry.get('jersey_number')})
+            starters.append({'player_id': player_id, 'name': name.strip(), 'jersey_number': entry.get('jersey_number'),
+                             'image_url': (entry.get('player') or {}).get('image_path'),
+                             'position_id': entry.get('position_id')})
         if len(starters) != 11:
             raise LineupsNotReady('Both teams need exactly 11 confirmed starters. Refresh when the complete team sheets are available.')
         result[side] = {'team_id': team['id'], 'starters': starters}

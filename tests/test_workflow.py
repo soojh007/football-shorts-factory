@@ -113,6 +113,14 @@ def setup_workflow(monkeypatch,ready):
     clock=Mock()
     clock.now.return_value=NOW
     monkeypatch.setattr('backend.workflow.datetime',clock)
+    monkeypatch.setattr('backend.workflow.enrich_history',lambda source,now:source)
+    def contextual(fixture,histories,lineups,now,league_id,research=None):
+        return add_lineup_sections(make_prediction(fixture,histories,as_of=now,league_id=league_id),lineups)
+    monkeypatch.setattr('backend.workflow.contextual_prediction',contextual)
+    researcher=MagicMock();researcher.brief.return_value={'performed':True,'claims':[],'sources':[]}
+    monkeypatch.setattr('backend.workflow.ResearchClient',lambda:researcher)
+    monkeypatch.setattr('backend.workflow.collect_player_media',lambda *args:[])
+    monkeypatch.setattr('backend.workflow.venue_context',lambda *args:{'name':'Test venue'})
     return client
 
 
