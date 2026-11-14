@@ -1,6 +1,6 @@
-# Football Shorts Factory — Milestones 1, 2 and 3
+# Football Shorts Factory — Milestones 1–4
 
-Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Milestone 3 generates WAV voice narration. Video rendering and publishing are not implemented.
+Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Milestone 3 generates WAV voice narration. Milestone 4 renders a captioned vertical MP4. YouTube publishing is not implemented.
 
 ## Installation
 
@@ -205,3 +205,45 @@ The metadata and console include **“This narration uses an AI-generated voice.
 `backend/speech.py` contains API access, input checks, hashes and WAV inspection; `backend/narrate.py` contains CLI, caching and atomic output. Mock tests cover request bodies, credentials, HTTP/network errors, malformed/truncated WAV data, duration measurement, invalid settings, preview rejection, and cache reuse/force/corruption. Run `python -m pytest -q` without real credentials. For errors, check OpenAI billing/model access, input analysis JSON, voice and speed configuration, output permissions and connectivity. Error messages do not expose API bodies, keys or request exception details.
 
 Live verification on 14 November 2026: fixture `19427552` generated a WAV with the `coral` voice. At speed 1.0 it measured 61.2 seconds and was flagged for timing review; at speed 1.1 the regenerated WAV measured 55.87 seconds, within target. The default CLI speed is 1.1. A repeat run reused the audio without another speech request. These are measured audio durations; pronunciation and delivery still require listening review. All 156 tests pass.
+
+
+## Milestone 4: vertical video rendering
+
+Install the updated Python requirements and FFmpeg (including `ffprobe` and the `libx264` encoder):
+
+```sh
+python -m pip install -r requirements.txt
+# macOS, if FFmpeg is not installed:
+brew install ffmpeg
+python -m backend.render --fixture 19427552
+```
+
+This uses the existing normalized fixture, AI analysis, narration WAV and narration metadata. It does not regenerate analysis or speech. The first run sends the WAV to OpenAI's [Transcriptions API](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create) using `whisper-1`, `verbose_json` and word timestamps; it uses `OPENAI_API_KEY` and may incur transcription charges. Later renders reuse timestamps when audio/script hashes match. `--refresh-captions` explicitly requests fresh timestamps. No automatic paid retries or approximate whole-script timing fallback are performed.
+
+The video is a graphic statistical recap: a persistent full-time score, team names, match date, home/away color mapping, changing statistic cards, short captions, progress indicator and a visible **AI-GENERATED VOICE** disclosure. Values come from the verified normalized fixture. Missing values display `N/A`, with no comparison bar when either value is missing. No match footage, music, team crests, new factual analysis or publishing is included.
+
+Outputs (all ignored by Git):
+
+- `generated/19427552_short.mp4`: 1080×1920 at 30 fps, H.264/yuv420p video and AAC audio with fast-start metadata.
+- `generated/19427552_captions.srt`: timed captions preserving approved script text.
+- `generated/19427552_captions.json`: cached transcription word timings, audio/script hashes, alignment coverage and caption scenes.
+- `generated/19427552_poster.png`: opening frame.
+- `generated/19427552_render.json`: output dimensions/codecs/duration, provenance hashes, caption coverage, cache-use flag, disclosure and editorial-review flag.
+
+Optional directories:
+
+```sh
+python -m backend.render --fixture 19427552 --data-dir data/fixtures --artifacts-dir generated --output-dir generated
+```
+
+The renderer checks fixture identity, FT completion, configured EPL league, current source hash, exact analysis fact/evidence records, script/audio hashes and measured WAV metadata before a transcription request. Narration must be within 30–60 seconds. Source changes require regeneration of dependent artifacts. The captions preserve the original script instead of publishing transcription errors. Matching normalizes punctuation, case and integer spellings below 100; unmatched script words are interpolated between matching timestamps. Coverage must be at least 90 percent of the larger normalized token sequence. This is an alignment diagnostic, not a promise of perfect synchronization, pronunciation or factual speech accuracy. Caption boundaries are phrase-based and rounded onto the video frame grid. Review the full video before publication.
+
+Pillow draws the frames directly; no browser or subtitle-font FFmpeg extension is required. A usable TrueType font is needed. macOS Arial Bold, common Linux DejaVu/Liberation fonts and Windows Arial Bold are detected. To override, set `VIDEO_FONT` to an installed `.ttf` file. Text wraps and shrinks within fixed margins; extremely long text that cannot fit is rejected. Original team-name glyph support depends on the font.
+
+FFmpeg is invoked with an argument list, never a shell command. The controlled temporary concat manifest uses relative generated filenames; it contains no user-provided file directives. Encoding happens in a temporary directory. ffprobe checks dimensions, pixel format, codecs, frame rate, video stream duration and overall container duration before replacing the MP4. The explicit FPS conversion and final-frame hold prevent the still-image video stream from ending before the audio. Rendering requires a working FFmpeg installation with libx264/AAC; failure messages omit raw process/API content. Temporary files are cleaned up. The MP4, poster, SRT and metadata are replaced separately, not as a multi-file transaction; an I/O failure may leave mixed ancillary artifacts. Re-running uses cached valid timestamps and rebuilds outputs.
+
+The Speech API lifecycle note above still applies. Documentation checked on 14 November 2026 also schedules `whisper-1` transcription shutdown for 26 February 2027. The separate `TranscriptionClient` will need migration to a timestamp-capable replacement before shutdown. It cannot be replaced with an arbitrary model name without checking its response schema and timestamp support.
+
+Tests cover spoken-number alignment, preserved caption text, mismatch rejection, invalid/non-monotonic timestamps, API failures, SRT formatting, stale-source rejection, exact fact validation, cache hashes, graphic dimensions and a real one-second FFmpeg encoding/probing check when tools/fonts are available. The full mocked suite does not require live API credentials. The actual generated match video is a draft for listening and caption-timing review; YouTube publishing remains a separate milestone.
+
+Live verification on 14 November 2026: fixture `19427552` rendered successfully as 1080×1920 H.264/yuv420p video at 30 fps with AAC audio. The container measured 55.87 seconds; the video stream measured 55.866667 seconds and audio 55.869917 seconds. Audio transcription aligned 98.0 percent of normalized tokens into 33 caption scenes. A repeat render reused the timestamp cache. Sample frames at the opening, two statistic cards and final caption were visually inspected for clipping and legibility. All 186 tests pass, including real FFmpeg encoding/probing. Full playback and listening review remain necessary before publishing.
