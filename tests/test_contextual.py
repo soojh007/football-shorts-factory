@@ -149,3 +149,9 @@ def test_real_image_required_for_each_team(tmp_path,monkeypatch):
     monkeypatch.setattr('backend.player_media.commons_photo',lambda *args:None)
     prediction={'featured_players':{side:[{'player_id':i,'name':'A Player'}] for i,side in enumerate(('home','away'))}}
     with pytest.raises(MediaError,match='visual'): collect_player_media(prediction,tmp_path,session=Mock())
+
+
+def test_tracking_parameters_do_not_discard_retrieved_source():
+    payload=research_payload([claim()])
+    payload['output'][0]['action']['sources'][0]['url']='https://example.org/team-news?utm_source=openai'
+    assert len(validate_research(payload,{'id':1},NOW)['claims'])==1

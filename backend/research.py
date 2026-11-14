@@ -2,7 +2,7 @@
 from datetime import datetime,timedelta,timezone
 import json
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse,parse_qsl
 from typing import Literal
 
 import requests
@@ -53,7 +53,8 @@ def validate_research(payload,fixture,now):
     rejected=0
     def canonical(url):
         value=urlparse(url)
-        return (value.hostname or '').lower().removeprefix('www.'),value.path.rstrip('/'),value.query
+        query=tuple(sorted((key,item) for key,item in parse_qsl(value.query) if not key.lower().startswith('utm_')))
+        return (value.hostname or '').lower().removeprefix('www.'),value.path.rstrip('/'),query
     retrieved={canonical(url) for url in sources}
     for claim in brief['claims']:
         url=claim['source_url']
