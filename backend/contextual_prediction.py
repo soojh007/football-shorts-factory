@@ -7,9 +7,8 @@ from backend.prematch import kickoff_utc
 
 
 def venue_context(fixture,team_id):
-    venue=fixture.get('venue') or {}
-    if not venue.get('name') or type(venue.get('country_id')) is not int:
-        raise PredictionError('A verified venue and venue country are required for the contextual forecast.')
+    venue=fixture.get('venue')
+    if not isinstance(venue,dict): venue={}
     participants=fixture.get('participants') or []
     own=next((p for p in participants if p.get('id')==team_id),{})
     other=next((p for p in participants if p.get('id')!=team_id),{})
@@ -19,9 +18,12 @@ def venue_context(fixture,team_id):
         if code=='neutral_venue' or meta.get('type_id')==35:
             value=(meta.get('values') or {}).get('neutral')
             if type(value) is bool: neutral=value
-    country=venue['country_id']
+    country=venue.get('country_id')
+    if type(country) is not int: country=None
     if neutral is True:
         role='neutral'
+    elif country is None:
+        role='unknown'
     elif country==own.get('country_id') and neutral is False:
         role='own_country'
     elif country==other.get('country_id') and neutral is False:
@@ -30,8 +32,14 @@ def venue_context(fixture,team_id):
         role='third_country'
     else:
         role='neutrality_unverified'
-    return {'id':venue.get('id'),'name':venue['name'],'city':venue.get('city_name'),
+    return {'id':venue.get('id'),'name':venue.get('name') or None,'city':venue.get('city_name'),
             'country_id':country,'neutral':neutral,'role':role,'image_url':venue.get('image_path')}
+
+
+def venue_changed(before,after):
+    """Only contradicting known facts require a rebuild; missing fields do not."""
+    return any(before.get(key) is not None and after.get(key) is not None
+               and before[key]!=after[key] for key in ('id','name','city','country_id','neutral'))
 
 
 def rating(entry):
@@ -97,9 +105,11 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=1082,resea
     profiles={};venues={}
     for side in ('home','away'):
         team=result['teams'][side]
-        venues[side]=venue_context(fixture,team['id'])
+        # Conflicting venue reports exclude only venue context, not the match.
+        venue_fixture={} if (research or {}).get('venue_check')=='conflicting' else fixture
+        venues[side]=venue_context(venue_fixture,team['id'])
         profiles[side]=lineup_profile(team['id'],lineups[side],histories[side],result['form'][side],as_of)
-    factors={'own_country':1.06,'opponent_country':.97,'neutral':1.0,'third_country':1.0,'neutrality_unverified':1.0}
+    factors={'own_country':1.06,'opponent_country':.97,'neutral':1.0,'third_country':1.0,'neutrality_unverified':1.0,'unknown':1.0}
     h,a=profiles['home'],profiles['away']
     home_rate=(h['rates']['goals_for']+a['rates']['goals_against'])/2*h['rating_factor']*factors[venues['home']['role']]
     away_rate=(a['rates']['goals_for']+h['rates']['goals_against'])/2*a['rating_factor']*factors[venues['away']['role']]
@@ -107,15 +117,17 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=1082,resea
     result['lineups']=deepcopy(lineups)
     result['context']={'venue':venues['home'],'venue_by_team':venues,'lineup_profiles':profiles,
                        'web_research':research or {'performed':False,'claims':[],'sources':[]}}
-    result['forecast']={'model':'lineup-venue-poisson-v2','calibrated':False,'probabilities':probabilities,
+    result['forecast']={'model':'lineup-venue-poisson-v3','calibrated':False,'probabilities':probabilities,
         'outcome':outcome,'score_pick':pick,'score_pick_probability':score_mass,
         'model_goal_rates':{'home':home_rate,'away':away_rate},
         'assumptions':{'prior_matches':3,'prior_goals_per_game':1.4,'lineup_weight':'0.35 + 0.65 * overlap/11',
             'rating_adjustment':'1 + 0.08 * current-XI mean minus historical-XI mean; clipped 0.92–1.08; >=6 rated starters required',
-            'venue_factors':factors,'coefficients_hand_set_not_fitted':True},
+            'venue_factors':factors,'applied_venue_factors':{side:factors[venues[side]['role']] for side in venues},'coefficients_hand_set_not_fitted':True},
         'limitations':['Experimental coefficients, not backtested or calibrated.','Lineup overlap is not a complete player-strength model.',
             'Player ratings are missing for some players and depend on provider coverage.','Opponent strength, travel and weather are not quantitatively modeled.',
             'Internet reports are sourced context and cross-checks, not arbitrary numeric boosts.']}
+    if venues['home']['role']=='unknown':
+        result['forecast']['limitations'].append('Venue context unavailable or conflicting; no venue adjustment applied.')
     home,away=result['teams']['home']['name'],result['teams']['away']['name']
     preferred=home if outcome=='home' else away if outcome=='away' else 'a draw'
     featured={side:sorted(lineups[side]['starters'],key=lambda p:profiles[side]['player_ratings'].get(str(p['player_id']),-1),reverse=True)[:2] for side in ('home','away')}
@@ -123,19 +135,24 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=1082,resea
     venue=venues['home']
     place=venue['city'] or venue['name']
     venue_text=(f"This one's in {place}. I give {home} a small venue edge on home soil." if venue['role']=='own_country'
-        else f"This one's in {place}, so I am not assuming a home-ground advantage." if venue['role'] in ('neutral','third_country','neutrality_unverified')
+        else f"This one's in {place}, so I am not assuming a home-ground advantage." if venue['role'] in ('neutral','third_country','neutrality_unverified','unknown')
         else f"This one's in {place}. I give {away} the small venue edge here.")
     lineup_text=(f"I'm checking the actual eleven. {home} retain {h['latest_starters_retained']} starters from their latest sampled friendly; "
                  f"{away} retain {a['latest_starters_retained']}. That changes how I weight their recent results.")
     claims=(research or {}).get('claims') or []
     news=next((claim for claim in claims if claim['status']=='confirmed' and claim['topic']=='team_news'),None)
-    sections=[{'kind':'hook','text':f"I'm leaning towards {preferred}. But I'm checking the players and the ground, not just the last score."},
-              {'kind':'players','text':lineup_text}, {'kind':'venue','text':venue_text}]
+    focus='players and the ground' if place else 'players and the available evidence'
+    sections=[{'kind':'hook','text':f"I'm leaning towards {preferred}. But I'm checking the {focus}, not just the last score."},
+              {'kind':'players','text':lineup_text}]
+    if place: sections.append({'kind':'venue','text':venue_text})
     if news:
         sections.append({'kind':'research','text':f"I've also checked the team news: {news['summary']}"})
     elif (research or {}).get('performed'):
         sections.append({'kind':'research','text':"I checked outside reports too, but I'm not adding unverified team news."})
-    sections.extend([{'kind':'pick','text':f"My call is {home} {pick['home']}, {away} {pick['away']}. That's my read of the lineup-weighted form and the venue."},
+    basis='lineup-weighted form'
+    if venue['role'] in ('own_country','opponent_country'): basis+=' and the venue'
+    elif h['rating_factor_applied'] or a['rating_factor_applied']: basis+=' and available player ratings'
+    sections.extend([{'kind':'pick','text':f"My call is {home} {pick['home']}, {away} {pick['away']}. That's my read of the {basis}."},
                      {'kind':'caveat','text':"What could trip me up? Opponent quality and late changes. This is my tentative pick, not a certainty."}])
     if len(' '.join(section['text'] for section in sections).split())>150:
         sections=[section for section in sections if section['kind']!='research']

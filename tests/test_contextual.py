@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from backend.contextual_prediction import contextual_prediction, venue_context
+from backend.contextual_prediction import contextual_prediction, venue_context, venue_changed
 from backend.discover import available_matches
 from backend.prediction import PredictionError
 from backend.research import ResearchError, validate_research
@@ -83,7 +83,8 @@ def test_unverified_neutrality_no_home_edge(contextual_input):
     fixture['metadata']=[]
     assert venue_context(fixture,10)['role']=='neutrality_unverified'
     fixture['venue']={}
-    with pytest.raises(PredictionError,match='venue'): venue_context(fixture,10)
+    assert venue_context(fixture,10)['name'] is None
+    assert venue_context(fixture,10)['role']=='unknown'
 
 
 def research_payload(claims=None,venue='unverified'):
@@ -117,8 +118,11 @@ def test_undated_research_never_confirmed():
     assert result['claims'][0]['status']=='reported'
 
 
-def test_conflicting_venue_stops_generation():
-    with pytest.raises(ResearchError,match='conflict'): validate_research(research_payload(venue='conflicting'),{'id':1},NOW)
+def test_conflicting_venue_excluded_without_stopping_research():
+    result=validate_research(research_payload([claim(topic='venue'),claim()],venue='conflicting'),{'id':1},NOW)
+    assert result['venue_check']=='conflicting'
+    assert [row['topic'] for row in result['claims']]==['team_news']
+    assert result['gaps']
 
 
 def test_discovery_filters_window_and_started_matches(contextual_input):
@@ -169,3 +173,47 @@ def test_ai_predictions_excluded_and_unknown_publishers_not_confirmed():
 def test_unknown_venue_report_cannot_confirm_venue():
     result=validate_research(research_payload([claim(topic='venue')],venue='consistent'),{'id':1},NOW)
     assert result['venue_check']=='unverified'
+
+
+@pytest.mark.parametrize('venue',[None,{}, {'name':'Known stadium'}, {'country_id':1}])
+def test_optional_venue_never_blocks_forecast(contextual_input,venue):
+    fixture,histories,lineups=contextual_input
+    fixture['venue']=venue
+    if not venue or 'country_id' not in venue: fixture['metadata']=[]
+    result=contextual_prediction(fixture,histories,lineups,NOW)
+    assert 75<=result['word_count']<=150
+    assert 'None' not in result['script']
+    if not venue or not venue.get('name'):
+        assert 'venue' not in [section['kind'] for section in result['sections']]
+    if not venue or 'country_id' not in venue:
+        assert result['forecast']['assumptions']['applied_venue_factors']=={'home':1,'away':1}
+        assert 'venue edge' not in result['script']
+
+
+def test_conflicting_venue_does_not_change_available_lineup_forecast(contextual_input):
+    fixture,histories,lineups=contextual_input
+    result=contextual_prediction(fixture,histories,lineups,NOW,research={'performed':True,'venue_check':'conflicting','claims':[]})
+    assert result['context']['venue']['name'] is None
+    assert result['forecast']['assumptions']['applied_venue_factors']=={'home':1,'away':1}
+    assert 'venue' not in [section['kind'] for section in result['sections']]
+    assert result['context']['lineup_profiles']['home']['latest_starters_retained']==11
+
+
+def test_venue_recheck_ignores_missing_fields_but_detects_known_changes():
+    assert not venue_changed({'name':'Stadium','country_id':1},{'name':None,'country_id':None})
+    assert not venue_changed({'name':None},{'name':'Newly available'})
+    assert venue_changed({'name':'Old stadium'},{'name':'New stadium'})
+    assert venue_changed({'neutral':False},{'neutral':True})
+
+
+@pytest.mark.parametrize('venue',[None,{'city_name':'Basra'}])
+def test_optional_venue_video_scenes_render(contextual_input,venue):
+    from backend.personal_video import draw_personal_frame
+    fixture,histories,lineups=contextual_input
+    fixture['venue']=venue
+    result=contextual_prediction(fixture,histories,lineups,NOW)
+    word=0
+    for section in result['sections']:
+        frame=draw_personal_frame(result,{'word_start':word,'text':'My matchday take.'},0,1)
+        assert frame.size==(1080,1920)
+        word+=len(section['text'].split())

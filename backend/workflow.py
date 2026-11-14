@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from backend.analyze import save_text
 from backend.lineups import LineupsNotReady, add_lineup_sections, confirmed_lineups
-from backend.contextual_prediction import contextual_prediction,venue_context
+from backend.contextual_prediction import contextual_prediction,venue_context,venue_changed
 from backend.research import ResearchClient
 from backend.player_media import collect_player_media
 from backend.main import ROOT, positive_int, save_json
@@ -177,7 +177,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         for side in ('home','away'):
             if latest[side]!=lineups[side]:
                 raise LineupsNotReady('The official lineup changed during production. Run again to rebuild the video before upload.')
-        if venue_context(current,prediction['teams']['home']['id'])!=venue_context(fixture,prediction['teams']['home']['id']):
+        if venue_changed((prediction.get('context') or {}).get('venue',{}),venue_context(current,prediction['teams']['home']['id'])):
             raise LineupsNotReady('The venue changed during production. Run again before uploading.')
         if kickoff_utc(current)!=kickoff_utc(fixture):
             raise LineupsNotReady('Kickoff changed during production. Run again with the updated schedule.')
