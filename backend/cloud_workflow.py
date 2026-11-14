@@ -11,7 +11,7 @@ from backend.lineups import LineupsNotReady,confirmed_lineups
 from backend.main import ROOT
 from backend.prematch import PrematchClient
 from backend.workflow import find_matches,lineup_fixture,run_workflow
-from backend.youtube import current_channel
+from backend.youtube import current_channel,VIDEO_PATTERN
 from backend.youtube_auth import save_token,load_credentials,youtube_service
 
 
@@ -68,6 +68,21 @@ def run():
     except LineupsNotReady as exc:
         print(f'Waiting: {exc}',flush=True)
         summary('Waiting — no video or upload created',str(exc)+' Run the workflow again in the final hour once official starting elevens are confirmed.')
+        return
+    receipt_path=ROOT/'generated'/f'{fixture_id}_prediction_youtube_upload.json'
+    if receipt_path.exists():
+        try:
+            receipt=json.loads(receipt_path.read_text())
+            valid=(receipt.get('state')=='uploaded'
+                and receipt.get('channel_id')==channel['id']
+                and isinstance(receipt.get('video_id'),str)
+                and VIDEO_PATTERN.fullmatch(receipt['video_id']))
+        except (ValueError,AttributeError,OSError):
+            valid=False
+        if not valid:
+            raise CloudStateError('A previous upload is uncertain or mismatched. Check YouTube Studio before creating another video.')
+        print('An earlier upload record exists for this match. No paid generation or duplicate upload was started.',flush=True)
+        summary('Already uploaded — no duplicate created','A successful upload record already exists for this match. Check YouTube Studio; this run did not regenerate or upload the video again.')
         return
     if os.getenv('CLOUD_VALIDATE_ONLY','false').lower()=='true':
         print('Cloud account, match and confirmed-lineup checks passed. Validation only; no paid generation or upload.',flush=True)

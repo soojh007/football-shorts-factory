@@ -93,3 +93,18 @@ def test_waiting_never_generates_or_uploads(monkeypatch):
     monkeypatch.setattr(cloud_workflow,'run_workflow',run)
     cloud_workflow.run()
     run.assert_not_called()
+
+
+def test_restored_receipt_prevents_paid_regeneration(tmp_path,monkeypatch):
+    cloud_run_mocks(monkeypatch)
+    monkeypatch.setattr(cloud_workflow,'ROOT',tmp_path)
+    monkeypatch.setenv('CLOUD_VALIDATE_ONLY','false')
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',lambda *args:{'confirmed':True})
+    out=tmp_path/'generated'
+    out.mkdir()
+    (out/'19878000_prediction_youtube_upload.json').write_text(json.dumps({'state':'uploaded',
+        'channel_id':'UCw3H9KY5toxOuN7cSDsIKqA','video_id':'abcdefghijk'}))
+    run=Mock()
+    monkeypatch.setattr(cloud_workflow,'run_workflow',run)
+    cloud_workflow.run()
+    run.assert_not_called()
