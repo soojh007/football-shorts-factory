@@ -13,7 +13,7 @@ from backend.captions import CaptionError,TranscriptionClient,align_captions,srt
 from backend.main import ROOT,positive_int,save_json
 from backend.narrate import save_audio
 from backend.prediction import PredictionError,make_prediction,teams_for_preview
-from backend.prediction_video import draw_prediction_frame
+from backend.prediction_video import STYLE_VERSION,draw_prediction_frame,section_at
 from backend.prematch import PrematchClient
 from backend.render import load_words
 from backend.speech import SpeechClient,SpeechError,sha256,wav_metadata
@@ -75,18 +75,45 @@ def render_prediction(prediction,out):
     with tempfile.TemporaryDirectory(prefix='.prediction-',dir=out) as folder:
         workdir=Path(folder)
         frames=[]
-        for i,caption in enumerate(aligned['captions']):
+        captions=aligned['captions']
+        # Render original graphic motion at 8 fps; FFmpeg outputs CFR at 30 fps.
+        # Include every caption boundary so words remain synchronized.
+        duration=measured['duration_seconds']
+        ticks={0.0,duration}
+        ticks.update(min(duration,index/8) for index in range(int(duration*8)+1))
+        ticks.update(caption['start'] for caption in captions)
+        ticks.update(caption['end'] for caption in captions)
+        ticks=sorted(ticks)
+        # Remove sub-frame intervals: they cannot be represented in a 30fps MP4.
+        ticks=sorted({round(time*30)/30 for time in ticks if time<duration}|{duration})
+        scenes=[]
+        caption_index=0
+        section_start=0.0
+        previous_kind=None
+        for i,(start,end) in enumerate(zip(ticks,ticks[1:])):
+            if end-start<0.015:
+                continue
+            while caption_index+1<len(captions) and captions[caption_index+1]['start']<=start+1/60:
+                caption_index+=1
+            caption=captions[caption_index]
+            kind=section_at(prediction,caption['word_start'])
+            if kind!=previous_kind:
+                section_start=start
+                previous_kind=kind
             path=workdir/f'frame_{i:04}.png'
-            draw_prediction_frame(prediction,caption,caption['start']/measured['duration_seconds']).save(path)
+            draw_prediction_frame(prediction,caption,start/duration,
+                                  animation=min(1,(start-section_start)/0.85)).save(path)
             frames.append(path)
+            scenes.append({'start':start,'end':end})
         staged=workdir/'video.mp4'
-        encode_video(frames,aligned['captions'],audio_path,staged,measured['duration_seconds'],workdir)
+        encode_video(frames,scenes,audio_path,staged,measured['duration_seconds'],workdir)
         verification=probe_video(staged,measured['duration_seconds'])
         staged.replace(out/f'{prefix}.mp4')
         frames[0].replace(out/f'{prefix}_poster.png')
     save_text(out/f'{prefix}_captions.srt',srt_text(aligned['captions']))
     save_json(out/f'{prefix}_render.json',{'content_type':'prediction','fixture_id':prediction['fixture_id'],
         'league_id':prediction['league_id'],'as_of':prediction['as_of'],
+        'style_version':STYLE_VERSION,'graphics_motion_fps':8,'footer_visible':False,
         'video_sha256':sha256((out/f'{prefix}.mp4').read_bytes()),'alignment_coverage':aligned['alignment_coverage'],
         'forecast_model':prediction['forecast']['model'],'calibrated':False,'requires_editorial_review':True,**verification})
     return verification
