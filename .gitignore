@@ -218,3 +218,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Football Shorts Factory credentials and generated outputs
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.DS_Store
+data/fixtures/*
+!data/fixtures/.gitkeep
+generated/*
+!generated/.gitkeep
+
+# Google OAuth client credentials and refresh tokens
+secrets/
+client_secret*.json
+client_secrets*.json
+youtube_token*.json
+token.json
+.factory-state/

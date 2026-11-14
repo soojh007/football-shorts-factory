@@ -1,0 +1,136 @@
+import json
+from unittest.mock import MagicMock, Mock
+
+import pytest
+
+from backend.youtube import current_channel, existing_upload, upload_body, upload_video
+from backend.youtube_auth import SCOPES, YouTubeError, load_credentials, save_token
+
+CHANNEL = 'UCw3H9KY5toxOuN7cSDsIKqA'
+
+
+@pytest.fixture
+def body():
+    return upload_body({'title': 'Home 2–1 Away | Match numbers', 'summary': 'The recorded score was Home 2, Away 1.'})
+
+
+@pytest.fixture
+def service():
+    service = MagicMock()
+    service.channels.return_value.list.return_value.execute.return_value = {
+        'items': [{'id': CHANNEL, 'snippet': {'title': 'Football Shorts'}}]}
+    service.videos.return_value.insert.return_value.next_chunk.return_value = (
+        None, {'id': 'abcdefghijk', 'status': {'privacyStatus': 'private'}})
+    return service
+
+
+def test_private_disclosed_metadata(body):
+    assert body['status'] == {'privacyStatus': 'private', 'selfDeclaredMadeForKids': False, 'containsSyntheticMedia': True}
+    assert 'AI-generated voice' in body['snippet']['description']
+    assert '#Shorts' in body['snippet']['description']
+    assert body['snippet']['categoryId'] == '17'
+
+
+@pytest.mark.parametrize('privacy', ['private', 'unlisted', 'public'])
+def test_explicit_privacy(privacy):
+    assert upload_body({'title': 'Match', 'summary': 'Facts.'}, privacy)['status']['privacyStatus'] == privacy
+
+
+@pytest.mark.parametrize('title', ['', 'x'*101, 'a<b'])
+def test_invalid_title(title):
+    with pytest.raises(YouTubeError):
+        upload_body({'title': title, 'summary': 'Facts.'})
+
+
+def test_channel_identity(service):
+    assert current_channel(service)['id'] == CHANNEL
+    assert service.channels.return_value.list.call_args.kwargs['mine'] is True
+
+
+def test_channel_mismatch_prevents_upload(tmp_path, service, body):
+    service.channels.return_value.list.return_value.execute.return_value['items'][0]['id'] = 'UC' + 'x'*22
+    with pytest.raises(YouTubeError, match='does not match'):
+        upload_video(service, tmp_path/'video.mp4', body, CHANNEL, 'hash', tmp_path/'receipt.json')
+    service.videos.assert_not_called()
+    assert not (tmp_path/'receipt.json').exists()
+
+
+def test_resumable_upload_and_duplicate_guard(tmp_path, service, body):
+    video = tmp_path/'video.mp4'
+    video.write_bytes(b'fake-video')
+    path = tmp_path/'receipt.json'
+    receipt, reused = upload_video(service, video, body, CHANNEL, 'hash', path)
+    assert reused is False
+    assert receipt['video_id'] == 'abcdefghijk'
+    assert receipt['requested_privacy'] == 'private'
+    assert receipt['processing_verified'] is False
+    kwargs = service.videos.return_value.insert.call_args.kwargs
+    assert kwargs['notifySubscribers'] is False
+    assert kwargs['media_body'].resumable() is True
+    assert kwargs['body'] == body
+    assert service.videos.return_value.insert.return_value.next_chunk.call_args.kwargs['num_retries'] == 3
+    receipt2, reused = upload_video(service, video, body, CHANNEL, 'hash', path)
+    assert reused is True and receipt2['video_id'] == receipt['video_id']
+    assert service.videos.return_value.insert.call_count == 1
+
+
+def test_intermediate_chunk_does_not_start_new_insert(tmp_path, service, body):
+    video = tmp_path/'video.mp4'
+    video.write_bytes(b'fake-video')
+    service.videos.return_value.insert.return_value.next_chunk.side_effect = [
+        (Mock(), None), (None, {'id': 'abcdefghijk', 'status': {'privacyStatus': 'private'}})]
+    upload_video(service, video, body, CHANNEL, 'hash', tmp_path/'receipt.json')
+    assert service.videos.return_value.insert.call_count == 1
+    assert service.videos.return_value.insert.return_value.next_chunk.call_count == 2
+
+
+def test_uncertain_failure_keeps_reservation(tmp_path, service, body):
+    video = tmp_path/'video.mp4'
+    video.write_bytes(b'fake-video')
+    service.videos.return_value.insert.return_value.next_chunk.side_effect = RuntimeError('sensitive-response')
+    path = tmp_path/'receipt.json'
+    with pytest.raises(YouTubeError) as exc:
+        upload_video(service, video, body, CHANNEL, 'hash', path)
+    assert 'sensitive-response' not in str(exc.value)
+    assert json.loads(path.read_text())['state'] == 'uploading'
+    with pytest.raises(YouTubeError, match='uncertain'):
+        upload_video(service, video, body, CHANNEL, 'hash', path)
+    assert service.videos.return_value.insert.call_count == 1
+
+
+def test_different_file_or_metadata_is_blocked(tmp_path, service, body):
+    video = tmp_path/'video.mp4'
+    video.write_bytes(b'fake-video')
+    path = tmp_path/'receipt.json'
+    upload_video(service, video, body, CHANNEL, 'hash', path)
+    with pytest.raises(YouTubeError, match='different'):
+        upload_video(service, video, body, CHANNEL, 'new-hash', path)
+    assert service.videos.return_value.insert.call_count == 1
+
+
+def test_missing_token_does_not_start_login(tmp_path, monkeypatch):
+    monkeypatch.setenv('YOUTUBE_TOKEN_FILE', str(tmp_path/'missing-token.json'))
+    factory = Mock()
+    monkeypatch.setattr('backend.youtube_auth.InstalledAppFlow.from_client_secrets_file', factory)
+    with pytest.raises(YouTubeError, match='not connected'):
+        load_credentials()
+    factory.assert_not_called()
+
+
+def test_missing_client_secrets(tmp_path, monkeypatch):
+    monkeypatch.setenv('YOUTUBE_CLIENT_SECRETS', str(tmp_path/'missing.json'))
+    with pytest.raises(YouTubeError, match='Desktop'):
+        load_credentials(login=True)
+
+
+def test_private_token_permissions(tmp_path):
+    path = tmp_path/'secrets'/'token.json'
+    save_token(path, '{"refresh_token":"synthetic"}')
+    assert path.read_text() == '{"refresh_token":"synthetic"}'
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_missing_channel(service):
+    service.channels.return_value.list.return_value.execute.return_value = {'items': []}
+    with pytest.raises(YouTubeError):
+        current_channel(service)
