@@ -240,3 +240,4 @@ client_secret*.json
 client_secrets*.json
 youtube_token*.json
 token.json
+.factory-state/
