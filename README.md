@@ -1,6 +1,6 @@
-# Football Shorts Factory — Milestones 1–4
+# Football Shorts Factory — Milestones 1–5
 
-Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Milestone 3 generates WAV voice narration. Milestone 4 renders a captioned vertical MP4. YouTube publishing is not implemented.
+Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Milestone 3 generates WAV voice narration. Milestone 4 renders a captioned vertical MP4. Milestone 5 prepares YouTube metadata and provides an explicit OAuth-authorized upload command, private by default.
 
 ## Installation
 
@@ -247,3 +247,45 @@ The Speech API lifecycle note above still applies. Documentation checked on 14 N
 Tests cover spoken-number alignment, preserved caption text, mismatch rejection, invalid/non-monotonic timestamps, API failures, SRT formatting, stale-source rejection, exact fact validation, cache hashes, graphic dimensions and a real one-second FFmpeg encoding/probing check when tools/fonts are available. The full mocked suite does not require live API credentials. The actual generated match video is a draft for listening and caption-timing review; YouTube publishing remains a separate milestone.
 
 Live verification on 14 November 2026: fixture `19427552` rendered successfully as 1080×1920 H.264/yuv420p video at 30 fps with AAC audio. The container measured 55.87 seconds; the video stream measured 55.866667 seconds and audio 55.869917 seconds. Audio transcription aligned 98.0 percent of normalized tokens into 33 caption scenes. A repeat render reused the timestamp cache. Sample frames at the opening, two statistic cards and final caption were visually inspected for clipping and legibility. All 186 tests pass, including real FFmpeg encoding/probing. Full playback and listening review remain necessary before publishing.
+
+
+## Milestone 5: YouTube upload
+
+The upload integration is implemented and mocked-tested; a live upload requires authorizing your own YouTube channel. Start with [YOUTUBE_SETUP.md](YOUTUBE_SETUP.md) for the Google Cloud and Desktop OAuth steps. The provided channel ID is stored only in local `.env`.
+
+```sh
+python -m pip install -r requirements.txt
+# Local preparation only: no Google sign-in or upload.
+python -m backend.publish --fixture 19427552
+# Explicit browser sign-in, after saving Desktop OAuth client credentials:
+python -m backend.youtube_auth
+# Upload the prepared video privately:
+python -m backend.publish --fixture 19427552 --upload
+```
+
+Google OAuth credentials are separate from Sportmonks and OpenAI credentials. An API key alone cannot upload to a YouTube channel. Default local settings:
+
+```dotenv
+YOUTUBE_CLIENT_SECRETS=secrets/youtube_client_secret.json
+YOUTUBE_TOKEN_FILE=secrets/youtube_token.json
+YOUTUBE_CHANNEL_ID=your_UC_channel_identifier
+```
+
+The explicit auth command opens a local-loopback Google consent flow with `youtube.upload` and `youtube.readonly` scopes. Upload scope permits insertion; readonly scope allows verifying the exact authorized channel using `channels.list(mine=True)`. Tokens are saved atomically with mode 0600; the new secrets directory is created with mode 0700. Existing parent directory modes are not changed. Token refresh is supported; expired/revoked or insufficient authorization requires signing in again. The uploader never starts an interactive login unexpectedly. OAuth client files and refresh tokens are excluded from Git.
+
+Before preparing metadata or uploading, the CLI verifies the original source chain, exact evidence records, source/script/audio/video hashes, actual MP4 stream properties, timing and recorded disclosure. The title and description are rebuilt from verified team names, final score and fact sentences. The default category is Sports (17), language English, and tags include football/Premier League/Shorts. The description discloses AI narration and identifies the statistics source. YouTube's `containsSyntheticMedia` is explicitly true. Audience defaults to not directed at children; use `--made-for-kids` when that is the correct audience designation.
+
+`--privacy` accepts `private`, `unlisted` or `public`; default is always private. Specifying privacy without `--upload` only changes the local preview. An actual upload uses the explicit `--upload` flag and must match `YOUTUBE_CHANNEL_ID` exactly. Changing privacy or audience on an already-uploaded video is not implemented; use YouTube Studio. The current milestone does not schedule publication, set thumbnails, upload a separate caption track, poll processing status or guarantee YouTube's Shorts classification. Captions are already burned into the MP4; the local SRT remains available for manual use.
+
+Outputs in the ignored artifacts directory:
+
+- `19427552_youtube_plan.json`: concrete title, description, tags, privacy/audience/synthetic-media settings, target channel and verified video metadata. This does not indicate an upload occurred.
+- `19427552_youtube_upload.json`: upload reservation or completed receipt, video ID/URL, source video hash, exact request body, requested/returned privacy and upload timestamp. A completed receipt means YouTube accepted the upload, not that processing, playback or public visibility was verified.
+
+Uploads use 8 MB resumable chunks. Transient chunk failures are retried at most three times by the client library on the same in-process request; a new insert request is never started as an automatic retry. A file reservation is created exclusively before insertion so two local processes cannot upload simultaneously. A matching successful receipt returns the existing URL without another upload or Google API call. A receipt for changed media, metadata or channel blocks accidental re-upload. An interrupted/uncertain reservation also blocks a fresh insertion: check YouTube Studio first, because the remote upload might have finished even if the final response was lost. Resumable sessions are not persisted across process restarts. If receipt persistence fails, keep the reservation and reconcile it with Studio manually. Do not remove upload records blindly.
+
+Google/YouTube account configuration, quota, API project status and platform processing can affect upload availability and visibility. The CLI always reports requested and returned visibility when available, suppresses raw API/credential exception text, and avoids subscriber notifications on insertion. Review processing, title, description, privacy, audience, synthetic-content disclosure, captions and playback in Studio before changing public visibility.
+
+References: official [upload guide](https://developers.google.com/youtube/data/guides/uploading_a_video), [videos.insert](https://developers.google.com/youtube/data/reference/rest/v3/videos/insert), and [channels.list](https://developers.google.com/youtube/data/reference/rest/v3/channels/list).
+
+Validation on 14 November 2026: 206 tests pass, including private defaults, explicit visibility, channel mismatch prevention, resumable chunks, repeat-upload prevention, ambiguous upload failures, token permissions, local preview and missing credentials. The actual 55.87-second MP4 passed local upload preparation for the configured channel, with private visibility. No Google OAuth sign-in or live YouTube upload was performed because client credentials are not configured yet.
