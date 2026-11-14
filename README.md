@@ -1,6 +1,6 @@
-# Football Shorts Factory — Milestones 1 and 2
+# Football Shorts Factory — Milestones 1, 2 and 3
 
-Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Speech synthesis, video rendering, and publishing are not implemented.
+Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Milestone 3 generates WAV voice narration. Video rendering and publishing are not implemented.
 
 ## Installation
 
@@ -165,3 +165,43 @@ New modules: `backend/analysis.py` builds/verifies facts and assembles narration
 Troubleshooting: if `OPENAI_API_KEY` is missing, add it to `.env` or use `--offline-preview`. Check OpenAI API access/billing for authentication or quota failures. Invalid/unknown fact IDs or incomplete output are rejected rather than silently replaced by an offline result. If input validation fails, rerun the fixture ingestion command. Review limitations before using the script in production.
 
 Live verification on 14 November 2026: the configured OpenAI API successfully generated analysis for fixture `19427552`. The saved script contained 145 words (estimated 58 seconds at 150 words/minute); schema, source evidence, script consistency, and credential checks passed. Actual audio duration remains unmeasured. The strict selection schema now constrains fact IDs and selection count in addition to application-side validation.
+
+
+## Milestone 3: voice narration
+
+Generate speech from the saved AI analysis (reuses `OPENAI_API_KEY`):
+
+```sh
+python -m backend.narrate --fixture 19427552
+# Alternative source and voice:
+python -m backend.narrate --input generated/19427552_analysis.json --voice coral --speed 1.0
+```
+
+Optional `.env` settings:
+
+```dotenv
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=coral
+OPENAI_TTS_SPEED=1.1
+```
+
+This sends the existing script to OpenAI's [Speech API](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create). It makes no new match analysis request, does not modify the script, and does not render or publish video. API usage may incur charges. The script must come from valid `ai` analysis JSON, contain at most 4096 characters, and agree with its word count and evidence sentences. Offline previews are not accepted for this command. No new dependencies beyond the existing requirements are needed.
+
+Outputs in the ignored `generated/` directory:
+
+- `19427552_narration.wav`: PCM WAV audio, suitable for later video rendering.
+- `19427552_narration.json`: voice, speech model, speed, script/source/audio hashes, timestamp, actual sample count and duration, sample rate, channels, timing flag, and AI voice disclosure.
+
+The script is spoken with an instructed British football presenter tone when using `gpt-4o-mini-tts`. This is a style instruction, not a guarantee of accent or verbatim delivery. Listen for pronunciation, omissions, additions, pacing and overall quality before production. Automated transcription/alignment is not part of this milestone.
+
+The pipeline measures actual WAV PCM samples, not the earlier words-per-minute estimate. A duration outside 30–60 seconds is flagged for timing review; valid audio is retained without automatic paid retries, rewriting, or time stretching. Adjust `--speed` (0.25–4.0) or regenerate/review a shorter script explicitly. Supported Speech API models are `gpt-4o-mini-tts`, `tts-1`, and `tts-1-hd`; `instructions` are not sent for the latter two. Model and voice defaults are independently configurable from the analysis model.
+
+Repeated runs reuse existing audio only when generation settings, script/source hashes, audio hash and measured metadata agree. Use `--force` to request regeneration even when matching audio exists. Changing speed or voice generates a replacement. Each file is atomically replaced individually; audio and metadata are not a single transaction. If a write fails, the next run will reject mismatched cache files. A failed API request leaves previous artifacts untouched.
+
+The metadata and console include **“This narration uses an AI-generated voice.”** Carry this disclosure into the eventual video/player/publication as required by the [OpenAI speech guide](https://developers.openai.com/api/docs/guides/text-to-speech); metadata alone is not a disclosure to the eventual viewer.
+
+**API lifecycle:** documentation checked on 14 November 2026 marks the Speech API models deprecated with shutdown scheduled for 6 January 2027 and recommends the Realtime API replacement. This milestone implements the currently supported Speech API workflow; its separate `SpeechClient` will need migration before shutdown. A Realtime model cannot simply be substituted into `OPENAI_TTS_MODEL` because it uses a different API workflow.
+
+`backend/speech.py` contains API access, input checks, hashes and WAV inspection; `backend/narrate.py` contains CLI, caching and atomic output. Mock tests cover request bodies, credentials, HTTP/network errors, malformed/truncated WAV data, duration measurement, invalid settings, preview rejection, and cache reuse/force/corruption. Run `python -m pytest -q` without real credentials. For errors, check OpenAI billing/model access, input analysis JSON, voice and speed configuration, output permissions and connectivity. Error messages do not expose API bodies, keys or request exception details.
+
+Live verification on 14 November 2026: fixture `19427552` generated a WAV with the `coral` voice. At speed 1.0 it measured 61.2 seconds and was flagged for timing review; at speed 1.1 the regenerated WAV measured 55.87 seconds, within target. The default CLI speed is 1.1. A repeat run reused the audio without another speech request. These are measured audio durations; pronunciation and delivery still require listening review. All 156 tests pass.
