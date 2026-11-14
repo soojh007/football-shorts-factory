@@ -1,11 +1,14 @@
-"""Distinct editorial graphics for forecasts, never presented as final scores."""
-from PIL import Image, ImageDraw
+"""Animated forecast graphics, with no footer or progress-bar overlay."""
 from datetime import datetime
+import math
 from zoneinfo import ZoneInfo
+
+from PIL import Image, ImageDraw
 
 from backend.video import text_block
 
 INK, CREAM, CORAL, GREEN = '#122a30', '#f4f1e7', '#fc654c', '#c0ff69'
+STYLE_VERSION = 2
 
 
 def section_at(prediction, word):
@@ -18,69 +21,130 @@ def section_at(prediction, word):
     return 'caveat'
 
 
-def badge(draw, center, team):
-    x,y = center
-    draw.ellipse((x-76,y-76,x+76,y+76),fill='white',outline=INK,width=3)
+def badge(draw, center, team, radius=76):
+    x, y = center
+    r = radius
+    draw.ellipse((x-r,y-r,x+r,y+r), fill='white', outline=INK, width=3)
     if team == 'Japan':
-        draw.ellipse((x-35,y-35,x+35,y+35),fill='#bd2137')
+        d = r * .46
+        draw.ellipse((x-d,y-d,x+d,y+d), fill='#bd2137')
     elif team == 'Brazil':
-        draw.ellipse((x-69,y-69,x+69,y+69),fill='#168447')
-        draw.polygon([(x,y-53),(x+57,y),(x,y+53),(x-57,y)],fill='#f5d34a')
-        draw.ellipse((x-27,y-27,x+27,y+27),fill='#214e9b')
+        d = r * .91
+        draw.ellipse((x-d,y-d,x+d,y+d), fill='#168447')
+        draw.polygon([(x,y-r*.7),(x+r*.75,y),(x,y+r*.7),(x-r*.75,y)], fill='#f5d34a')
+        d = r * .36
+        draw.ellipse((x-d,y-d,x+d,y+d), fill='#214e9b')
     else:
-        text_block(draw,team[:3].upper(),(x-62,y-35,x+62,y+35),34,INK,max_lines=1)
+        text_block(draw,team[:3].upper(),(x-r+8,y-35,x+r-8,y+35),34,INK,max_lines=1)
 
 
-def draw_prediction_frame(prediction, caption, progress):
+def football(draw, center, radius, rotation=0):
+    x,y = center
+    draw.ellipse((x-radius+8,y-radius+15,x+radius+8,y+radius+15), fill='#091c22')
+    draw.ellipse((x-radius,y-radius,x+radius,y+radius), fill=CREAM, outline=INK, width=5)
+    points = [(x+radius*.4*math.cos(rotation+i*math.tau/5),
+               y+radius*.4*math.sin(rotation+i*math.tau/5)) for i in range(5)]
+    draw.polygon(points, fill=INK)
+    for px,py in points:
+        angle = math.atan2(py-y,px-x)
+        edge = (x+radius*.92*math.cos(angle),y+radius*.92*math.sin(angle))
+        draw.line(((px,py),edge), fill=INK, width=4)
+        draw.ellipse((edge[0]-9,edge[1]-9,edge[0]+9,edge[1]+9), fill=INK)
+
+
+def pitch(draw, box, color, width=3):
+    x0,y0,x1,y1=box
+    middle=(y0+y1)/2
+    draw.rounded_rectangle(box, radius=12, outline=color, width=width)
+    draw.line((x0,middle,x1,middle), fill=color, width=width)
+    draw.ellipse(((x0+x1)/2-62,middle-62,(x0+x1)/2+62,middle+62), outline=color,width=width)
+    for top in (True,False):
+        y=y0 if top else y1-105
+        draw.rectangle(((x0+x1)/2-105,y,(x0+x1)/2+105,y+105),outline=color,width=width)
+
+
+def form_badges(draw, sequence, y, phase):
+    count=len(sequence)
+    start=540-(count*132-16)//2
+    for i,result in enumerate(sequence):
+        reveal=min(1,max(0,phase*1.6-i*.12))
+        color={'W':GREEN,'D':'#d9d8c9','L':CORAL}[result]
+        x=start+i*132
+        draw.rounded_rectangle((x,y,x+116,y+84),radius=15,fill=color if reveal>.15 else '#29464a')
+        if reveal>.15:
+            text_block(draw,result,(x,y,x+116,y+84),43,INK,max_lines=1)
+
+
+def draw_prediction_frame(prediction, caption, progress, *, animation=1.0):
+    phase=min(1,max(0,animation))
+    ease=1-(1-phase)**3
     image=Image.new('RGB',(1080,1920),CREAM)
     draw=ImageDraw.Draw(image)
-    draw.polygon([(690,0),(1080,0),(1080,1090),(280,1530)],fill='#e8e8d8')
-    draw.rectangle((0,0,1080,30),fill=CORAL)
-    text_block(draw,'THE PREDICTION ROOM',(74,96,1006,165),39,INK,'left',1)
-    text_block(draw,prediction['competition'].upper(),(74,180,1006,230),27,INK,'left',1)
-    text_block(draw,'FORECAST / NOT A RESULT',(74,252,1006,300),25,CORAL,'left',1)
+    draw.polygon([(720,0),(1080,0),(1080,1920),(150,1920)],fill='#e6e9d9')
+    pitch(draw,(790,60,1230,640),'#d3dac9',3)
+    draw.rectangle((0,0,1080,22),fill=CORAL)
+    text_block(draw,'THE PREDICTION ROOM',(72,76,1008,138),36,INK,'left',1)
+    text_block(draw,prediction['competition'].upper(),(72,151,1008,202),26,INK,'left',1)
+    draw.rounded_rectangle((72,228,1008,285),radius=14,fill=INK)
+    text_block(draw,'FORECAST / NOT A RESULT',(94,231,986,280),25,CREAM,'left',1)
     home,away=prediction['teams']['home']['name'],prediction['teams']['away']['name']
-    badge(draw,(240,410),home)
-    badge(draw,(840,410),away)
-    text_block(draw,'VS',(440,362,640,456),55,INK,max_lines=1)
-    text_block(draw,home.upper(),(72,506,472,595),49,INK,max_lines=2)
-    text_block(draw,away.upper(),(608,506,1008,595),49,INK,max_lines=2)
+    badge(draw,(240,407),home,94)
+    badge(draw,(840,407),away,94)
+    text_block(draw,'VS',(446,365,634,452),57,INK,max_lines=1)
+    text_block(draw,home.upper(),(72,520,472,599),48,INK,max_lines=2)
+    text_block(draw,away.upper(),(608,520,1008,599),48,INK,max_lines=2)
     kickoff=datetime.fromisoformat(prediction['kickoff']).astimezone(ZoneInfo('Asia/Singapore'))
-    text_block(draw,kickoff.strftime('%d %b %Y / %H:%M SGT').upper(),(72,600,1008,638),24,INK,max_lines=1)
+    text_block(draw,kickoff.strftime('%d %b / %H:%M SGT').upper(),(72,602,1008,640),24,INK,max_lines=1)
     kind=section_at(prediction,caption['word_start'])
-    draw.rounded_rectangle((72,650,1008,1200),radius=36,fill=INK)
+    draw.rounded_rectangle((56,676,1024,1330),radius=38,fill=INK)
     hf,af=prediction['form']['home'],prediction['form']['away']
     if kind=='hook':
-        text_block(draw,'FORM VS FIREPOWER',(118,702,962,768),29,GREEN,max_lines=1)
-        text_block(draw,'WHO WINS\nTHIS FRIENDLY?',(118,812,962,1050),90,CREAM,max_lines=3)
-        text_block(draw,'Evidence first. Then the score pick.',(118,1090,962,1144),28,CREAM,max_lines=2)
+        text_block(draw,'FORM VS FIREPOWER',(102,710,978,772),29,GREEN,'left',1)
+        text_block(draw,'WHO WINS THIS FRIENDLY?',(102,800,675,1004),72,CREAM,'left',3)
+        football(draw,(839,910+int(9*math.sin(progress*math.tau*6))),105,progress*2)
+        draw.line((104,1048,976,1048),fill='#365357',width=2)
+        text_block(draw,f"{hf['wins']} WINS",(100,1084,494,1175),66,GREEN,max_lines=1)
+        text_block(draw,f"{af['goals_for']} GOALS",(556,1084,980,1175),66,CORAL,max_lines=1)
+        text_block(draw,f"{home} / last {hf['sample_size']}",(100,1190,494,1264),26,CREAM,max_lines=2)
+        text_block(draw,f"{away} / last {af['sample_size']}",(556,1190,980,1264),26,CREAM,max_lines=2)
     elif kind in ('home_form','away_form'):
         form,name=(hf,home) if kind=='home_form' else (af,away)
-        text_block(draw,f'{name.upper()} / LAST {form["sample_size"]}',(118,690,962,763),32,GREEN,max_lines=2)
-        text_block(draw,str(form['goals_for']),(118,786,515,950),136,CREAM,max_lines=1)
-        text_block(draw,str(form['goals_against']),(565,786,962,950),136,CORAL,max_lines=1)
-        text_block(draw,'GOALS FOR',(118,955,515,1015),27,CREAM,max_lines=1)
-        text_block(draw,'CONCEDED',(565,955,962,1015),27,CREAM,max_lines=1)
-        colors={'W':GREEN,'D':'#d9d8c9','L':CORAL}
-        count=len(form['sequence'])
-        start=540-(count*118-14)//2
-        for i,result in enumerate(form['sequence']):
-            x=start+i*118
-            draw.rounded_rectangle((x,1066,x+104,1140),radius=12,fill=colors[result])
-            text_block(draw,result,(x,1066,x+104,1140),37,INK,max_lines=1)
+        text_block(draw,f"{name.upper()} / LAST {form['sample_size']}",(102,708,978,782),34,GREEN,'left',2)
+        max_goals=max(hf['goals_for'],af['goals_for'],hf['goals_against'],af['goals_against'],1)
+        for i,(field,label,color) in enumerate((('goals_for','GOALS FOR',GREEN),('goals_against','CONCEDED',CORAL))):
+            y=816+i*150
+            text_block(draw,label,(104,y,704,y+46),27,CREAM,'left',1)
+            draw.rounded_rectangle((104,y+68,762,y+112),radius=14,fill='#29464a')
+            end=104+int(658*form[field]/max_goals*ease)
+            if end>104:
+                draw.rounded_rectangle((104,y+68,end,y+112),radius=14,fill=color)
+            text_block(draw,str(form[field]),(794,y+16,972,y+128),88,color,max_lines=1)
+        form_badges(draw,form['sequence'],1172,phase)
+        text_block(draw,'RECENT RESULTS / NEWEST FIRST',(104,1270,976,1311),22,CREAM,max_lines=1)
     elif kind=='pick':
-        pick=prediction['forecast']['score_pick']
-        text_block(draw,'MY SCORE PICK',(118,700,962,770),37,GREEN,max_lines=1)
-        text_block(draw,f'{pick["home"]} — {pick["away"]}',(118,810,962,1022),166,CREAM,max_lines=1)
-        text_block(draw,'Exploratory form model / not calibrated',(118,1082,962,1145),28,CREAM,max_lines=2)
+        text_block(draw,'MY SCORE PREDICTION',(102,714,978,786),36,GREEN,max_lines=1)
+        pitch(draw,(124,825,956,1192),'#27494b',3)
+        score=prediction['forecast']['score_pick']
+        offset=int(35*(1-ease))
+        text_block(draw,str(score['home']),(108-offset,884,460-offset,1114),196,CREAM,max_lines=1)
+        text_block(draw,'—',(460,922,620,1080),75,CORAL,max_lines=1)
+        text_block(draw,str(score['away']),(620+offset,884,972+offset,1114),196,CREAM,max_lines=1)
+        text_block(draw,'EXPLORATORY MODEL / NOT CALIBRATED',(102,1230,978,1296),25,GREEN,max_lines=1)
     else:
-        text_block(draw,'WHAT COULD CHANGE IT?',(118,700,962,770),32,GREEN,max_lines=1)
-        text_block(draw,'LINEUPS.\nROTATION.\nUNCERTAINTY.',(118,804,962,1070),75,CREAM,max_lines=3)
-        text_block(draw,'Opponent strength is not adjusted.',(118,1090,962,1150),27,CREAM,max_lines=2)
-    draw.rounded_rectangle((72,1280,1008,1525),radius=26,fill=CORAL)
-    text_block(draw,caption['text'],(114,1302,966,1498),57,INK,max_lines=3)
-    draw.rectangle((72,1590,1008,1600),fill='#d4d8cd')
-    draw.rectangle((72,1590,72+int(936*progress),1600),fill=INK)
-    text_block(draw,'AI VOICE / SPECULATIVE PREDICTION',(72,1640,1008,1692),26,INK,'left',1)
-    text_block(draw,'Source: Sportmonks match results / recent friendlies',(72,1700,1008,1750),22,INK,'left',2)
+        text_block(draw,'WHAT COULD CHANGE IT?',(102,714,978,786),34,GREEN,'left',1)
+        for i,(name,color) in enumerate((('LINEUPS',CREAM),('ROTATION',GREEN),('OPPONENT STRENGTH',CORAL))):
+            y=825+i*145
+            draw.ellipse((108,y+14,166,y+72),outline=color,width=4)
+            if i==0:
+                draw.ellipse((128,y+25,146,y+43),fill=color)
+                draw.arc((120,y+43,154,y+67),180,360,fill=color,width=4)
+            elif i==1:
+                draw.arc((119,y+25,155,y+62),30,320,fill=color,width=4)
+            else:
+                draw.polygon([(137,y+26),(151,y+55),(123,y+55)],outline=color,width=3)
+            text_block(draw,name,(198,y-1,974,y+89),45,color,'left',2)
+        text_block(draw,'A PREDICTION. NEVER A PROMISE.',(102,1250,978,1300),26,CREAM,max_lines=1)
+    draw.rounded_rectangle((56,1392,1024,1655),radius=30,fill=CORAL)
+    text_block(draw,caption['text'],(104,1418,976,1625),59,INK,max_lines=3)
+    # No footer text or progress bar: leave platform controls clear.
     return image
