@@ -77,3 +77,11 @@ def test_malformed_relationships(payload, field, value):
     payload["data"][field] = value
     with pytest.raises(FixtureValidationError):
         validate_fixture(payload["data"])
+
+
+def test_participant_type_is_string(payload):
+    for team in payload["data"]["participants"]:
+        team["type"] = "domestic"
+    teams, score, status = validate_fixture(payload["data"])
+    assert teams["home"].id == 10
+    assert status == "FT"

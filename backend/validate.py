@@ -78,10 +78,15 @@ def validate_fixture(fixture, epl_league_id=8):
         if not isinstance(entries, list) or any(not isinstance(entry, dict) for entry in entries):
             raise FixtureValidationError("Invalid fixture relationship data.")
         for entry in entries:
-            for nested in ("meta", "score", "data", "type"):
+            nested_fields = {
+                "participants": ("meta",), "scores": ("score",),
+                "statistics": ("data", "type"), "expected": ("data", "type"),
+                "events": ("type",),
+            }[field]
+            for nested in nested_fields:
                 if entry.get(nested) is not None and not isinstance(entry[nested], dict):
                     raise FixtureValidationError("Invalid nested fixture data.")
-            metadata = entry.get("type") or {}
+            metadata = (entry.get("type") or {}) if field in ("statistics", "expected", "events") else {}
             if any(metadata.get(key) is not None and not isinstance(metadata[key], str)
                    for key in ("code", "developer_name")):
                 raise FixtureValidationError("Invalid type metadata.")
