@@ -155,3 +155,17 @@ def test_tracking_parameters_do_not_discard_retrieved_source():
     payload=research_payload([claim()])
     payload['output'][0]['action']['sources'][0]['url']='https://example.org/team-news?utm_source=openai'
     assert len(validate_research(payload,{'id':1},NOW)['claims'])==1
+
+
+def test_ai_predictions_excluded_and_unknown_publishers_not_confirmed():
+    payload=research_payload([claim(source_url='https://scoregpt.app/news'),claim(),claim(source_url='https://jfa.jp/news')])
+    payload['output'][0]['action']['sources'] += [{'url':'https://scoregpt.app/news'},{'url':'https://jfa.jp/news'}]
+    result=validate_research(payload,{'id':1},NOW)
+    assert len(result['claims'])==2
+    assert result['claims'][0]['status']=='reported'
+    assert result['claims'][1]['status']=='confirmed'
+
+
+def test_unknown_venue_report_cannot_confirm_venue():
+    result=validate_research(research_payload([claim(topic='venue')],venue='consistent'),{'id':1},NOW)
+    assert result['venue_check']=='unverified'
