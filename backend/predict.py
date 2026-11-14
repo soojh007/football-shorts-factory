@@ -12,7 +12,7 @@ from backend.analyze import save_text
 from backend.captions import CaptionError,TranscriptionClient,align_captions,srt_text
 from backend.main import ROOT,positive_int,save_json
 from backend.narrate import save_audio
-from backend.prediction import PredictionError,make_prediction,teams_for_preview
+from backend.prediction import PredictionError,make_prediction,teams_for_preview,prediction_content_hash
 from backend.prediction_video import STYLE_VERSION,draw_prediction_frame,section_at
 from backend.prematch import PrematchClient
 from backend.render import load_words
@@ -21,8 +21,8 @@ from backend.sportmonks import SportmonksError
 from backend.video import VideoError,require_tools,encode_video,probe_video
 
 
-def collect(client,fixture_id,league_id,as_of):
-    fixture=client.upcoming_fixture(fixture_id)['data']
+def collect(client,fixture_id,league_id,as_of,fixture=None):
+    fixture=fixture if fixture is not None else client.upcoming_fixture(fixture_id)['data']
     teams=teams_for_preview(fixture,as_of,league_id)
     if set(teams)!={'home','away'}:
         raise PredictionError('Missing pre-match teams.')
@@ -114,6 +114,8 @@ def render_prediction(prediction,out):
     save_json(out/f'{prefix}_render.json',{'content_type':'prediction','fixture_id':prediction['fixture_id'],
         'league_id':prediction['league_id'],'as_of':prediction['as_of'],
         'style_version':STYLE_VERSION,'graphics_motion_fps':8,'footer_visible':False,
+        'prediction_sha256':prediction_content_hash(prediction),'script_sha256':settings['script_sha256'],
+        'audio_sha256':sha256(audio),
         'video_sha256':sha256((out/f'{prefix}.mp4').read_bytes()),'alignment_coverage':aligned['alignment_coverage'],
         'forecast_model':prediction['forecast']['model'],'calibrated':False,'requires_editorial_review':True,**verification})
     return verification
