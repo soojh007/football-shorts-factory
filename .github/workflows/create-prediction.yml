@@ -6,6 +6,11 @@ on:
         description: 'Fixture ID or both teams (Friendly International)'
         required: true
         type: string
+      auto_retry:
+        description: 'Automatically check every 3 minutes until official XIs are ready (up to 2 hours)'
+        required: true
+        default: true
+        type: boolean
       validate_only:
         description: 'Check setup and lineups only; do not generate or upload'
         required: true
@@ -20,7 +25,7 @@ concurrency:
 jobs:
   create:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 155
     env:
       SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -28,6 +33,7 @@ jobs:
       YOUTUBE_CHANNEL_ID: ${{ vars.YOUTUBE_CHANNEL_ID }}
       GITHUB_TOKEN: ${{ github.token }}
       MATCH_INPUT: ${{ inputs.match }}
+      CLOUD_AUTO_RETRY: ${{ inputs.auto_retry }}
       CLOUD_VALIDATE_ONLY: ${{ inputs.validate_only }}
       PYTHONUNBUFFERED: '1'
     steps:

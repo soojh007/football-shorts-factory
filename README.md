@@ -390,3 +390,10 @@ The new video style uses a personal football-fan delivery, actual participating 
 A style preview for a completed fixture must be labeled **DESIGN PREVIEW**, suppress its score pick, and must not be treated as a newly generated pre-match prediction. The production workflow always rejects fixtures after kickoff.
 
 Latest validation: 269 automated tests pass locally. Live Sportmonks schedule and rich player/venue/history requests succeeded. A live external web search completed; no additional team-news claims passed the grounding checks in that probe, and the saved ledger records the gaps. A 1080×1920 style preview was rendered separately for the already completed Japan–Brazil fixture, clearly labeled as a design preview. No new prediction upload or public publication was performed for this update.
+
+
+## Automatic readiness retries
+
+**Create prediction video → Run workflow** now defaults `auto_retry` to true. Select a match starting within the next two hours. If it is too early or official XIs are not confirmed, the same job checks Sportmonks again every three minutes. Once the final-hour and confirmed-XI checks pass, production continues automatically. It stops waiting at kickoff or after two hours; a rescheduled/cancelled/started fixture still fails the existing readiness gates. Disable `auto_retry` for a one-shot check. `validate_only` always performs a single check without waiting or generating.
+
+This keeps one runner active while waiting, consuming Actions minutes, and holds the existing serialized production slot. Cancel the workflow in Actions to stop it. Only readiness is polled: API/authentication errors, rendering failures and uncertain uploads are not automatically retried. Existing receipt protection and the final pre-upload lineup/kickoff recheck still apply. A previously completed Waiting run cannot adopt new code automatically: start it once again using **Run workflow** on main with automatic checks enabled. The new run then handles the waiting.

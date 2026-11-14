@@ -108,3 +108,72 @@ def test_restored_receipt_prevents_paid_regeneration(tmp_path,monkeypatch):
     monkeypatch.setattr(cloud_workflow,'run_workflow',run)
     cloud_workflow.run()
     run.assert_not_called()
+
+
+def retry_clock(monkeypatch):
+    from datetime import datetime,timedelta,timezone
+    from types import SimpleNamespace
+    state={'elapsed':0.0}
+    base=datetime(2026,11,14,12,tzinfo=timezone.utc)
+    clock=Mock();clock.now.side_effect=lambda *args:base+timedelta(seconds=state['elapsed'])
+    monkeypatch.setattr(cloud_workflow,'datetime',clock)
+    monkeypatch.setattr(cloud_workflow,'time',SimpleNamespace(monotonic=lambda:state['elapsed'],
+        sleep=lambda seconds:state.update(elapsed=state['elapsed']+seconds)))
+    monkeypatch.setattr(cloud_workflow,'PrematchClient',lambda:MagicMock())
+    return state,base
+
+
+def test_auto_wait_continues_once_lineups_ready(monkeypatch):
+    state,base=retry_clock(monkeypatch)
+    fixture={'id':123,'starting_at':'2026-11-14 13:00:00'}
+    checks=Mock(side_effect=[LineupsNotReady('Not confirmed'),{'confirmed':True}])
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',checks)
+    fetch=Mock(return_value=fixture);monkeypatch.setattr(cloud_workflow,'lineup_fixture',fetch)
+    assert cloud_workflow.wait_for_lineups(123,fixture,auto_retry=True) is True
+    assert state['elapsed']==180
+    fetch.assert_called_once()
+    assert checks.call_count==2
+
+
+def test_auto_wait_stops_at_kickoff(monkeypatch):
+    state,_=retry_clock(monkeypatch)
+    fixture={'id':123,'starting_at':'2026-11-14 12:02:00'}
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Not confirmed')))
+    fetch=Mock();monkeypatch.setattr(cloud_workflow,'lineup_fixture',fetch)
+    assert cloud_workflow.wait_for_lineups(123,fixture,auto_retry=True) is False
+    assert state['elapsed']==120
+    fetch.assert_not_called()
+
+
+def test_auto_wait_rejects_matches_more_than_two_hours_away(monkeypatch):
+    state,_=retry_clock(monkeypatch)
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Too early')))
+    assert cloud_workflow.wait_for_lineups(123,{'starting_at':'2026-11-14 15:00:00'},auto_retry=True) is False
+    assert state['elapsed']==0
+
+
+def test_auto_wait_budget_survives_rescheduling(monkeypatch):
+    state,_=retry_clock(monkeypatch)
+    fixture={'id':123,'starting_at':'2026-11-14 14:00:00'}
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Waiting')))
+    monkeypatch.setattr(cloud_workflow,'lineup_fixture',Mock(return_value={'id':123,'starting_at':'2026-11-14 18:00:00'}))
+    assert cloud_workflow.wait_for_lineups(123,fixture,auto_retry=True) is False
+    assert state['elapsed']==7200
+
+
+def test_validation_only_disables_auto_wait(monkeypatch):
+    cloud_run_mocks(monkeypatch)
+    monkeypatch.setenv('CLOUD_VALIDATE_ONLY','true');monkeypatch.setenv('CLOUD_AUTO_RETRY','true')
+    wait=Mock(return_value=False);monkeypatch.setattr(cloud_workflow,'wait_for_lineups',wait)
+    cloud_workflow.run()
+    assert wait.call_args.kwargs['auto_retry'] is False
+
+
+def test_auto_wait_does_not_retry_api_failures(monkeypatch):
+    from backend.sportmonks import SportmonksError
+    retry_clock(monkeypatch)
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Waiting')))
+    fetch=Mock(side_effect=SportmonksError('Rate limited'));monkeypatch.setattr(cloud_workflow,'lineup_fixture',fetch)
+    with pytest.raises(SportmonksError):
+        cloud_workflow.wait_for_lineups(123,{'starting_at':'2026-11-14 13:00:00'},auto_retry=True)
+    fetch.assert_called_once()

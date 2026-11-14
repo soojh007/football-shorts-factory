@@ -5,11 +5,12 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 from backend.cloud_receipts import CloudStateError,pack_receipts,restore_latest
 from backend.lineups import LineupsNotReady,confirmed_lineups
 from backend.main import ROOT
-from backend.prematch import PrematchClient
+from backend.prematch import PrematchClient,kickoff_utc
 from backend.workflow import find_matches,lineup_fixture,run_workflow
 from backend.youtube import current_channel,VIDEO_PATTERN
 from backend.youtube_auth import save_token,load_credentials,youtube_service
@@ -42,6 +43,48 @@ def prepare():
             handle.write('state_ready=true\n')
 
 
+def wait_for_lineups(fixture_id,fixture,*,auto_retry=False):
+    """Poll only readiness; never retry generation or an uncertain upload."""
+    started=time.monotonic()
+    max_wait=2*60*60
+    first_check=True
+    while True:
+        if auto_retry and time.monotonic()-started>=max_wait:
+            summary('Stopped waiting — no video or upload created','The two-hour waiting limit was reached. No generation or upload was started.')
+            return False
+        now=datetime.now(timezone.utc)
+        try:
+            confirmed_lineups(fixture,now)
+            return True
+        except LineupsNotReady as exc:
+            if not auto_retry:
+                print(f'Waiting: {exc}',flush=True)
+                summary('Waiting — no video or upload created',str(exc)+
+                        ' Enable automatic readiness checks on a new production run, or run again when ready. Validation-only runs never wait.')
+                return False
+            seconds=(kickoff_utc(fixture)-now).total_seconds()
+            remaining=max_wait-(time.monotonic()-started)
+            if seconds<=0 or remaining<=0:
+                summary('Stopped waiting — no video or upload created','Kickoff or the two-hour waiting limit was reached. No generation or upload was started.')
+                return False
+            if seconds>max_wait and first_check:
+                summary('Waiting window not open','Automatic checks support matches starting within the next two hours. Start a new run closer to kickoff.')
+                return False
+            delay=min(180,seconds,remaining)
+            print(f'Waiting: {exc} Automatic readiness check in {int(delay)} seconds. Cancel this workflow to stop.',flush=True)
+            # Short sleeps allow prompt runner cancellation without busy polling.
+            wake=time.monotonic()+delay
+            while time.monotonic()<wake:
+                time.sleep(max(0,min(60,wake-time.monotonic())))
+            if datetime.now(timezone.utc)>=kickoff_utc(fixture):
+                summary('Stopped at kickoff — no video or upload created','Official XIs were not ready before kickoff. No generation or upload was started.')
+                return False
+            client=PrematchClient()
+            with client.session:
+                fixture=lineup_fixture(client,fixture_id)
+            first_check=False
+
+
 def run():
     from backend.video import require_tools
     require_tools()
@@ -63,11 +106,9 @@ def run():
             raise CloudStateError(f'Multiple fixtures match. Run again using a fixture ID: {options}')
         fixture_id=matches[0]['id']
         fixture=lineup_fixture(client,fixture_id)
-    try:
-        confirmed_lineups(fixture,datetime.now(timezone.utc))
-    except LineupsNotReady as exc:
-        print(f'Waiting: {exc}',flush=True)
-        summary('Waiting — no video or upload created',str(exc)+' Run the workflow again in the final hour once official starting elevens are confirmed.')
+    auto_retry=(os.getenv('CLOUD_AUTO_RETRY','false').lower()=='true'
+                and os.getenv('CLOUD_VALIDATE_ONLY','false').lower()!='true')
+    if not wait_for_lineups(fixture_id,fixture,auto_retry=auto_retry):
         return
     receipt_path=ROOT/'generated'/f'{fixture_id}_prediction_youtube_upload.json'
     if receipt_path.exists():
