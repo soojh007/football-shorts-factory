@@ -22,11 +22,15 @@ class OpenAIClient:
     def select_facts(self, facts):
         candidates = [fact for fact in facts if fact.id != "score"]
         count = min(4, len(candidates))
+        fact_id_schema = {"type": "string"}
+        if candidates:
+            fact_id_schema["enum"] = [fact.id for fact in candidates]
         schema = {
             "type": "object", "additionalProperties": False,
             "properties": {
                 "hook": {"type": "string", "enum": ["result", "numbers"]},
-                "fact_ids": {"type": "array", "items": {"type": "string"}},
+                "fact_ids": {"type": "array", "items": fact_id_schema,
+                             "minItems": count, "maxItems": count},
             }, "required": ["hook", "fact_ids"],
         }
         body = {

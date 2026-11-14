@@ -38,6 +38,9 @@ def test_structured_request(session, facts):
     assert body["store"] is False
     assert body["text"]["format"]["strict"] is True
     assert body["text"]["format"]["schema"]["additionalProperties"] is False
+    selection = body["text"]["format"]["schema"]["properties"]["fact_ids"]
+    assert selection["minItems"] == selection["maxItems"] == 2
+    assert set(selection["items"]["enum"]) == {"possession", "total_shots"}
     assert kwargs["timeout"] == 60
 
 
