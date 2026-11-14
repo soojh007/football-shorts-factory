@@ -1,6 +1,6 @@
-# Football Shorts Factory — Milestone 1
+# Football Shorts Factory — Milestones 1 and 2
 
-Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. This milestone contains no AI analysis, speech synthesis, video rendering, or publishing.
+Python 3.12 CLI to retrieve a completed English Premier League fixture from Sportmonks Football API v3, validate it, and save raw and normalized JSON for downstream production. Milestone 1 retrieves and normalizes match data. Milestone 2 adds AI editorial selection, evidence-backed statistical analysis, and narration scripts. Speech synthesis, video rendering, and publishing are not implemented.
 
 ## Installation
 
@@ -116,3 +116,50 @@ Tests mock all HTTP requests and use synthetic credentials only. They cover comp
 - Missing optional metrics: `null` is expected when metadata/coverage is unavailable. No values are fabricated.
 - Missing/invalid scores or teams: verify the fixture is fully populated upstream; normalization fails rather than guessing.
 - Save failure: check output directory permissions and disk space. Exit status is 1 for runtime failures, 2 for invalid CLI arguments, and 0 on success.
+
+
+## Milestone 2: analysis and narration
+
+Generate a match summary and a narration script from the saved normalized JSON:
+
+```sh
+python -m backend.analyze --fixture 19427552
+# Or supply an existing normalized JSON directly:
+python -m backend.analyze --input data/fixtures/19427552_normalized.json
+```
+
+Add these entries to your existing `.env` (do not replace your Sportmonks token):
+
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+```
+
+The OpenAI API credential is separate from your Sportmonks credential. Live analysis sends a verified fact inventory, including team names and match statistics, to OpenAI and may incur API charges. `--model` overrides `OPENAI_MODEL`; use a model supporting the Responses API and Structured Outputs. The configured default is `gpt-4o-mini`, not a claim about the newest available model. Authentication, access, quota, HTTP, timeout, refusal, incomplete-response, and invalid-output errors fail without logging response bodies or credentials. No automatic paid retries occur.
+
+Outputs are written to the ignored `generated/` directory:
+
+- `19427552_analysis.json`: summary, key points and source paths/values, limitations, narration, word count, timing estimate, model, and SHA-256 of the validated canonical source.
+- `19427552_analysis_script.txt`: narration ready for editorial review.
+
+Use `--output-dir` to change the destination. Repeated runs replace the corresponding files atomically per file, not as a two-file transaction. A failed API/validation run creates no new artifacts, but existing successful output is retained; an I/O failure can leave only one updated artifact.
+
+To try the pipeline without an OpenAI key or any network call:
+
+```sh
+python -m backend.analyze --fixture 19427552 --offline-preview
+```
+
+This uses deterministic ordering and writes `19427552_preview.json` and `19427552_preview_script.txt`. It is labeled `offline_preview`, never `ai`, and does not overwrite AI artifacts. The saved Nottingham Forest–Manchester United fixture produced a 144-word preview, estimated at 57.6 seconds. This is an offline preview of live Sportmonks data, not a live OpenAI test.
+
+### Factual controls and scope
+
+The model's role is editorial: choose a hook style and rank up to four verified statistical facts. It does not write arbitrary publishable prose. The application always includes the final score, rejects duplicate/unknown/score-as-statistic selections, and renders the selected facts through fixed sentences. This produces a constrained statistical analysis rather than free-form tactical commentary. The integration follows the official [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses) and [Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create).
+
+Each match-specific sentence has exact evidence paths and values in `key_points`. Team attribution comes from normalized home/away identities. Missing values stay unavailable, explicit zero remains zero, and comparisons require both values. No scorers, goal chronology, momentum, formations, causal explanations, or league-table implications are inferred. Goal events remain in the source but are not used for analysis until event reconciliation is implemented. Straight red cards retain their Milestone 1 meaning.
+
+The input is revalidated for schema, completion status, configured EPL league, distinct teams, statistic ranges and integral counts. The source hash covers the validated canonical JSON, not the original file bytes. The script targets 75–150 whitespace-separated words, estimated as 30–60 seconds at 150 words per minute. Actual speech timing varies; no audio has been generated or measured. Lower-ranked facts may be dropped to fit the budget, and only retained facts appear in `key_points`. Sparse data produces a score recap with explicit scope caveats, without filling missing statistics. All results require editorial review; correctness also depends on upstream data accuracy.
+
+New modules: `backend/analysis.py` builds/verifies facts and assembles narration; `backend/openai_client.py` handles API selection; `backend/analyze.py` handles CLI and output. The Milestone 1 command remains unchanged. Run the full suite with `python -m pytest -q`; API tests are mocked and do not require either credential.
+
+Troubleshooting: if `OPENAI_API_KEY` is missing, add it to `.env` or use `--offline-preview`. Check OpenAI API access/billing for authentication or quota failures. Invalid/unknown fact IDs or incomplete output are rejected rather than silently replaced by an offline result. If input validation fails, rerun the fixture ingestion command. Review limitations before using the script in production.
