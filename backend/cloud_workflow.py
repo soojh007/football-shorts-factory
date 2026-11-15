@@ -101,7 +101,7 @@ def run():
         matches=find_matches(os.getenv('MATCH_INPUT',''),client)
         if len(matches)!=1:
             if not matches:
-                raise CloudStateError('No matching upcoming international friendly found. Use a Sportmonks fixture ID or both team names.')
+                raise CloudStateError('No matching upcoming fixture was found in your accessible competitions. Use a Sportmonks fixture ID or both team names.')
             options=', '.join(f"{match['id']} ({match['name']})" for match in matches[:8])
             raise CloudStateError(f'Multiple fixtures match. Run again using a fixture ID: {options}')
         fixture_id=matches[0]['id']

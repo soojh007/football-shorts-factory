@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       match:
-        description: 'Fixture ID or both teams (Friendly International)'
+        description: 'Fixture ID or both teams (any subscribed competition)'
         required: true
         type: string
       auto_retry:

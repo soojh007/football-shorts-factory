@@ -25,7 +25,11 @@ from backend.video import probe_video, require_tools
 from backend.youtube import CHANNEL_PATTERN, current_channel, existing_upload, upload_video
 from backend.youtube_auth import YouTubeError, load_credentials, youtube_service
 
-LEAGUE_ID = 1082
+def fixture_league_id(fixture):
+    league_id=fixture.get('league_id')
+    if type(league_id) is not int or league_id<=0:
+        raise PredictionError('Fixture competition identity is missing.')
+    return league_id
 
 
 def lineup_fixture(client, fixture_id):
@@ -45,7 +49,7 @@ def find_matches(query, client, now=None):
         fixtures = [client.upcoming_fixture(int(query))['data']]
         words = []
     else:
-        fixtures = client.fixture_window(now.date(), (now + timedelta(days=21)).date(), league_id=LEAGUE_ID)
+        fixtures = client.fixture_window(now.date(), (now + timedelta(days=21)).date(), league_id=None)
         cleaned = unicodedata.normalize('NFKD', query).encode('ascii', 'ignore').decode().lower()
         words = [word for word in re.findall(r'[a-z0-9]+', cleaned) if word not in ('v','vs','versus')]
         if not words:
@@ -53,13 +57,13 @@ def find_matches(query, client, now=None):
     matches = []
     for fixture in fixtures:
         try:
-            teams = teams_for_preview(fixture, now, LEAGUE_ID)
+            teams = teams_for_preview(fixture, now, None)
         except (ValueError, TypeError, AttributeError):
             continue
         name = f"{teams['home']['name']} vs {teams['away']['name']}"
         normalized = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode().lower()
         if all(word in normalized for word in words):
-            matches.append({'id': fixture['id'], 'name': name, 'kickoff': kickoff_utc(fixture).isoformat()})
+            matches.append({'id': fixture['id'], 'name': name, 'kickoff': kickoff_utc(fixture).isoformat(), 'league_id':fixture['league_id'], 'competition':(fixture.get('league') or {}).get('name') or f"Competition {fixture['league_id']}"})
     return sorted(matches, key=lambda item: item['kickoff'])
 
 
@@ -67,11 +71,12 @@ def prediction_upload_body(prediction):
     h,a = prediction['teams']['home']['name'],prediction['teams']['away']['name']
     score=prediction['forecast']['score_pick']
     title=f'{h} vs {a} prediction | {prediction["kickoff"][:10]}'
-    description=(f"International friendly prediction: {h} {score['home']}–{score['away']} {a}.\n"
+    competition=prediction.get('competition') or f"Competition {prediction['league_id']}"
+    description=(f"{competition} prediction: {h} {score['home']}–{score['away']} {a}.\n"
         'Both official starting elevens were confirmed when this video was created.\n\n'
         f"{prediction['script']}\n\n{DISCLOSURE}\n"
         'Experimental lineup- and venue-conditioned forecast, not calibrated. Player/venue coefficients are heuristic, not validated accuracy claims.\n'
-        'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #InternationalFriendly')
+        'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #Prediction')
     research=(prediction.get('context') or {}).get('web_research') or {}
     urls=list(dict.fromkeys(claim['source_url'] for claim in research.get('claims',[])))[:3]
     credits=[f"{asset['name']}: {asset.get('artist','')} / {asset.get('license','')} / {asset.get('source_url','')}" for asset in prediction.get('media_assets',[])]
@@ -80,7 +85,7 @@ def prediction_upload_body(prediction):
     if not title or len(title)>100 or any(char in title+description for char in '<>') or len(description.encode())>5000:
         raise YouTubeError('The generated upload metadata exceeds YouTube limits; review the match names.')
     return {'snippet':{'title':title,'description':description,'categoryId':'17','defaultLanguage':'en',
-                       'tags':['football','international friendly','prediction','Shorts']},
+                       'tags':['football',competition[:80],'prediction','Shorts']},
             'status':{'privacyStatus':'private','selfDeclaredMadeForKids':False,'containsSyntheticMedia':True}}
 
 
@@ -104,7 +109,7 @@ def reusable_video(prediction, out):
 
 
 def enrich_history(source,now):
-    base=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=LEAGUE_ID)
+    base=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=fixture_league_id(source['fixture']))
     needed={m['fixture_id'] for form in base['form'].values() for m in form['matches']}
     enriched={}
     client=PrematchClient()
@@ -127,7 +132,8 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     with client.session:
         fixture=lineup_fixture(client,fixture_id)
         now=datetime.now(timezone.utc)
-        lineups=confirmed_lineups(fixture,now,LEAGUE_ID)
+        league_id=fixture_league_id(fixture)
+        lineups=confirmed_lineups(fixture,now,league_id)
         # Fail before paid generation if upload authorization is unavailable.
         if upload:
             report('Checking your connected YouTube channel')
@@ -140,17 +146,17 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
                     raise YouTubeError('The connected YouTube channel does not match the configured channel.')
             finally:
                 service.close()
-        report('Retrieving recent friendly results')
-        source=collect(client,fixture_id,LEAGUE_ID,now,fixture=fixture)
+        report('Retrieving recent results in the selected competition')
+        source=collect(client,fixture_id,league_id,now,fixture=fixture)
         report('Checking historical lineups, player ratings and venue context')
         source=enrich_history(source,now)
     # Validate data sufficiency before paying for web research.
-    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=LEAGUE_ID)
+    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id)
     report('Researching official announcements and credible reports on the internet')
     researcher=ResearchClient()
     with researcher.session:
         research=researcher.brief(source['fixture'])
-    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=LEAGUE_ID,research=research)
+    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id,research=research)
     save_json(out/f'{fixture_id}_web_research.json',research)
     report('Preparing real player visuals and first-person narration')
     prediction['media_assets']=collect_player_media(prediction,out)
@@ -172,7 +178,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         client=PrematchClient()
         with client.session:
             current=lineup_fixture(client,fixture_id)
-        latest=confirmed_lineups(current,datetime.now(timezone.utc),LEAGUE_ID)
+        latest=confirmed_lineups(current,datetime.now(timezone.utc),league_id)
         # Player substitutions or rescheduling during production require a refresh.
         for side in ('home','away'):
             if latest[side]!=lineups[side]:
@@ -222,7 +228,7 @@ def run_workflow(fixture_id, *, out=None, upload=True, report=None):
 
 def main(argv=None):
     load_dotenv(ROOT/'.env')
-    parser=argparse.ArgumentParser(description='Create and privately upload a friendly-match prediction with confirmed lineups.')
+    parser=argparse.ArgumentParser(description='Create and privately upload a match prediction with confirmed lineups.')
     parser.add_argument('--fixture',type=positive_int,required=True)
     parser.add_argument('--no-upload',action='store_true',help='Create the video locally only')
     args=parser.parse_args(argv)

@@ -225,3 +225,30 @@ def test_wrong_channel_stops_before_generation(ready,tmp_path,monkeypatch):
         run_workflow(19878000,out=tmp_path,upload=True)
     render.assert_not_called()
     assert not (tmp_path/'.19878000_workflow.lock').exists()
+
+
+def test_production_infers_competition_instead_of_friendly(ready,tmp_path,monkeypatch):
+    fixture,source=ready
+    fixture['league_id']=8; fixture['league']={'name':'Premier League'}
+    for rows in source['histories'].values():
+        for past in rows: past['league_id']=8
+    setup_workflow(monkeypatch,ready)
+    monkeypatch.setattr('backend.workflow.reusable_video',lambda *args:True)
+    result=run_workflow(fixture['id'],out=tmp_path,upload=False)
+    prediction=json.loads((tmp_path/f"{fixture['id']}_prediction.json").read_text())
+    assert prediction['league_id']==8 and prediction['competition']=='Premier League'
+    body=prediction_upload_body(prediction)
+    assert 'Premier League prediction' in body['snippet']['description']
+    assert 'international friendly' not in body['snippet']['description'].lower()
+    assert body['status']['privacyStatus']=='private'
+    assert result['uploaded'] is False
+
+
+def test_search_returns_multiple_accessible_competitions(ready):
+    fixture=ready[0]
+    domestic=deepcopy(fixture); domestic.update(id=123,league_id=8,league={'name':'Premier League'})
+    client=Mock();client.fixture_window.return_value=[fixture,domestic]
+    result=find_matches('Home FC',client,NOW)
+    assert {m['league_id'] for m in result}=={8,1082}
+    assert client.fixture_window.call_args.kwargs['league_id'] is None
+    assert len(confirmed_lineups(domestic,NOW)['home']['starters'])==11

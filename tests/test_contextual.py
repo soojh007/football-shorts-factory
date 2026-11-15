@@ -130,17 +130,17 @@ def test_discovery_filters_window_and_started_matches(contextual_input):
     later=deepcopy(fixture); later.update(id=1000,starting_at='2026-11-14 01:45:00')
     past=deepcopy(fixture); past.update(id=1001,starting_at='2026-11-13 23:45:00')
     started=deepcopy(fixture); started.update(id=1002,state_id=2)
-    client=Mock(); client.fixture_window.return_value=[later,past,started,fixture]
+    client=Mock(); client.subscribed_leagues.return_value=[]; client.fixture_window.return_value=[later,past,started,fixture]
     assert [m['fixture_id'] for m in available_matches(client,hours=1,now=NOW)['matches']]==[999]
     assert [m['fixture_id'] for m in available_matches(client,hours=2,now=NOW)['matches']]==[999,1000]
     assert available_matches(client,now=NOW)['matches'][0]['lineups_status']=='not_checked'
 
 
 def test_discovery_crosses_midnight(contextual_input):
-    client=Mock(); client.fixture_window.return_value=[]
+    client=Mock(); client.subscribed_leagues.return_value=[]; client.fixture_window.return_value=[]
     now=NOW.replace(hour=23)
     available_matches(client,now=now)
-    client.fixture_window.assert_called_once_with(now.date(),(now+timedelta(hours=2)).date(),league_id=1082)
+    client.fixture_window.assert_called_once_with(now.date(),(now+timedelta(hours=2)).date(),league_id=None)
 
 
 def test_commons_rejects_other_player_and_unsupported_license():
@@ -217,3 +217,27 @@ def test_optional_venue_video_scenes_render(contextual_input,venue):
         frame=draw_personal_frame(result,{'word_start':word,'text':'My matchday take.'},0,1)
         assert frame.size==(1080,1920)
         word+=len(section['text'].split())
+
+
+def test_discovery_covers_all_accessible_leagues_and_extended_window(contextual_input):
+    fixture,_,_=contextual_input
+    domestic=deepcopy(fixture);domestic.update(id=123,league_id=8,league={'name':'Premier League'},starting_at='2026-11-14 23:00:00')
+    client=Mock();client.subscribed_leagues.return_value=[{'id':8,'name':'Premier League','country':'England'}]
+    client.fixture_window.return_value=[fixture,domestic]
+    result=available_matches(client,hours=24,now=NOW)
+    assert {m['league_id'] for m in result['matches']}=={8,1082}
+    assert result['leagues']==client.subscribed_leagues.return_value
+    assert result['coverage']=='all_accessible_competitions'
+    assert client.fixture_window.call_args.kwargs['league_id'] is None
+
+
+def test_domestic_clubs_do_not_both_get_country_advantage(contextual_input):
+    fixture,histories,lineups=contextual_input
+    fixture['league_id']=8;fixture['league']={'name':'Premier League'}
+    for participant in fixture['participants']: participant['country_id']=1
+    for rows in histories.values():
+        for past in rows: past['league_id']=8
+    result=contextual_prediction(fixture,histories,lineups,NOW)
+    assert result['league_id']==8
+    assert result['forecast']['assumptions']['applied_venue_factors']=={'home':1,'away':1}
+    assert 'sampled friendly' not in result['script']

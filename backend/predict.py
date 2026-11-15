@@ -24,6 +24,7 @@ from backend.video import VideoError,require_tools,encode_video,probe_video
 def collect(client,fixture_id,league_id,as_of,fixture=None):
     fixture=fixture if fixture is not None else client.upcoming_fixture(fixture_id)['data']
     teams=teams_for_preview(fixture,as_of,league_id)
+    if league_id is None: league_id=fixture['league_id']
     if set(teams)!={'home','away'}:
         raise PredictionError('Missing pre-match teams.')
     histories={}
@@ -128,7 +129,7 @@ def main(argv=None):
     load_dotenv(ROOT/'.env')
     parser=argparse.ArgumentParser(description='Create an exploratory prediction from recent competition results.')
     parser.add_argument('--fixture',required=True,type=positive_int)
-    parser.add_argument('--league-id',type=positive_int,default=1082)
+    parser.add_argument('--league-id',type=positive_int,default=None,help='Optional competition check; defaults to the fixture competition')
     parser.add_argument('--output-dir',type=Path,default=ROOT/'generated')
     parser.add_argument('--reuse-source',action='store_true',help='Reuse saved match facts; still reject a fixture that has already started')
     parser.add_argument('--render',action='store_true',help='Generate speech, aligned captions and local MP4; makes paid OpenAI calls if uncached')
@@ -153,7 +154,7 @@ def main(argv=None):
             with client.session:
                 source=collect(client,args.fixture,args.league_id,now)
             cutoff=now
-        prediction=make_prediction(source['fixture'],source['histories'],as_of=cutoff,league_id=args.league_id)
+        prediction=make_prediction(source['fixture'],source['histories'],as_of=cutoff,league_id=args.league_id if args.league_id is not None else source['fixture']['league_id'])
         if not 75<=prediction['word_count']<=150:
             raise PredictionError('Prediction narration must contain 75–150 words.')
         save_json(source_path,source)

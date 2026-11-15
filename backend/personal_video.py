@@ -59,7 +59,7 @@ def draw_personal_frame(prediction,caption,progress,animation):
                 retained=profiles.get(side,{}).get('latest_starters_retained')
                 text=f"{retained}/11 RETAINED" if retained is not None else 'CONFIRMED STARTER'
                 text_block(draw,text,(66+i*510,1090,506+i*510,1212),47,LIME,max_lines=2)
-            text_block(draw,'Compared with the latest sampled friendly',(66,1250,1014,1330),30,WHITE,'left',2)
+            text_block(draw,'Compared with the latest sampled match',(66,1250,1014,1330),30,WHITE,'left',2)
     elif kind=='venue':
         venue=prediction.get('context',{}).get('venue') or {}
         pitch(draw,(130,490,950,1080),'#44654a',5)

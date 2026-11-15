@@ -146,3 +146,24 @@ def test_single_draw_grammar(forecast_input):
     result=make_prediction(fixture,histories,as_of=NOW,league_id=1082)
     assert '1 draw in their last' in result['script']
     assert '1 draws' not in result['script']
+
+
+def test_unfiltered_fixture_request_omits_league_filter():
+    session=Mock();session.get.return_value.status_code=200;session.get.return_value.json.return_value={'data':[]}
+    client=PrematchClient(token='synthetic-key',session=session)
+    client.fixture_request('between/2026-11-14/2026-11-15',includes='participants',league_id=None)
+    assert 'filters' not in session.get.call_args.kwargs['params']
+    client.fixture_request('between/2026-11-14/2026-11-15',includes='participants',league_id=8)
+    assert session.get.call_args.kwargs['params']['filters']=='fixtureLeagues:8'
+
+
+def test_subscribed_leagues_are_paginated_and_country_labeled():
+    session=Mock()
+    first=Mock(status_code=200);first.json.return_value={'data':[{'id':8,'name':'Premier League','country':{'name':'England'}}],'pagination':{'has_more':True}}
+    second=Mock(status_code=200);second.json.return_value={'data':[{'id':1357,'name':'Premier League','country':{'name':'Singapore'}}],'pagination':{'has_more':False}}
+    session.get.side_effect=[first,second]
+    leagues=PrematchClient(token='synthetic-key',session=session).subscribed_leagues()
+    assert {row['id'] for row in leagues}=={8,1357}
+    assert leagues[0]['country']=='England'
+    assert session.get.call_args.args[0]=='https://api.sportmonks.com/v3/football/leagues'
+    assert session.get.call_args.kwargs['params']['page']==2

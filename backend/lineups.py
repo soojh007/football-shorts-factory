@@ -7,7 +7,7 @@ class LineupsNotReady(ValueError):
     """The user can refresh when official teams become available."""
 
 
-def confirmed_lineups(fixture, now, league_id=1082):
+def confirmed_lineups(fixture, now, league_id=None):
     teams = teams_for_preview(fixture, now, league_id)
     minutes = (kickoff_utc(fixture) - now).total_seconds() / 60
     if minutes > 60:

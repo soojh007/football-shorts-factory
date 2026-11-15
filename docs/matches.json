@@ -1,16 +1,46 @@
 {
   "schema_version": 1,
-  "fetched_at": "2026-11-14T13:13:03.118956+00:00",
-  "window_hours": 2,
-  "competition_id": 1082,
+  "fetched_at": "2026-11-15T12:32:33.814195+00:00",
+  "window_hours": 24,
+  "competition_id": null,
+  "coverage": "all_accessible_competitions",
+  "leagues": [
+    {
+      "id": 3356,
+      "name": "Community Shield",
+      "country": "Singapore"
+    },
+    {
+      "id": 24,
+      "name": "FA Cup",
+      "country": "England"
+    },
+    {
+      "id": 1082,
+      "name": "Friendly International",
+      "country": "World"
+    },
+    {
+      "id": 8,
+      "name": "Premier League",
+      "country": "England"
+    },
+    {
+      "id": 1357,
+      "name": "Premier League",
+      "country": "Singapore"
+    }
+  ],
   "matches": [
     {
-      "fixture_id": 19904927,
-      "home": "Palestine",
-      "away": "Iran",
-      "kickoff": "2026-11-14T15:00:00+00:00",
-      "kickoff_singapore": "14 Nov 23:00 SGT",
-      "minutes_to_kickoff": 107,
+      "fixture_id": 19905776,
+      "home": "Suriname",
+      "away": "Eswatini",
+      "league_id": 1082,
+      "competition": "Friendly International",
+      "kickoff": "2026-11-15T17:00:00+00:00",
+      "kickoff_singapore": "16 Nov 01:00 SGT",
+      "minutes_to_kickoff": 267,
       "lineups_status": "not_checked",
       "creation_window_open": false
     }
