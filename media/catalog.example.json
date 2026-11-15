@@ -1,0 +1,13 @@
+[
+  {
+    "player_id": 382072,
+    "kind": "video",
+    "url": "https://example.org/replace-with-actual-free-player-clip.webm",
+    "source_url": "https://example.org/original-source-page",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "artist": "Replace with original creator",
+    "action": true,
+    "identity_verified": true
+  }
+]

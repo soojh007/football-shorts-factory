@@ -149,10 +149,10 @@ def test_commons_rejects_other_player_and_unsupported_license():
     assert commons_photo('Kaoru Mitoma',session) is None
 
 
-def test_real_image_required_for_each_team(tmp_path,monkeypatch):
+def test_missing_free_media_uses_graphics_instead_of_fake_players(tmp_path,monkeypatch):
     monkeypatch.setattr('backend.player_media.commons_photo',lambda *args:None)
     prediction={'featured_players':{side:[{'player_id':i,'name':'A Player'}] for i,side in enumerate(('home','away'))}}
-    with pytest.raises(MediaError,match='visual'): collect_player_media(prediction,tmp_path,session=Mock())
+    assert collect_player_media(prediction,tmp_path,session=Mock())==[]
 
 
 def test_tracking_parameters_do_not_discard_retrieved_source():
