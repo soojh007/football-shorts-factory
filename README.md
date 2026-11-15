@@ -412,7 +412,7 @@ References: [Sportmonks subscribed league discovery](https://docs.sportmonks.com
 
 ## Personal editorial narration
 
-Production now uses a dedicated football editorial agent after the contextual forecast and web research. It writes a conversational first-person take, names two to four confirmed starters (at least one from each team), and explains the pick using a compact evidence ledger. The selected player IDs also control the photographs used in the video. `OPENAI_EDITORIAL_MODEL` defaults to `gpt-4.1` and uses the existing OpenAI key.
+Production now uses a dedicated football editorial agent after the contextual forecast and web research. It writes a conversational first-person take, names two to four confirmed starters (at least one from each team), and explains the pick using a compact evidence ledger. The selected player IDs also control the photographs used in the video. `OPENAI_EDITORIAL_MODEL` defaults to `gpt-5.2` and uses the existing OpenAI key.
 
 The numerical score pick remains the contextual forecast's pick; this change improves the explanation and delivery rather than claiming improved predictive accuracy. The score reveal is appended by the application. An independent factual-review call checks the prose against the ledger, while local checks enforce confirmed player IDs/names, evidence references, word budget and removal of mechanical qualifications. Failed drafts receive at most one revision, then stop without silently using the old template. These model-based reviews reduce factual mistakes but do not prove every football interpretation is correct. Editorial writing/review adds API usage. Scripts, evidence and review metadata stay in ignored generated output, with no public artifacts.
 

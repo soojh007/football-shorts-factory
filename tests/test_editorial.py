@@ -20,10 +20,10 @@ def editorial_input():
 
 @pytest.fixture
 def draft():
-    return {'featured_player_ids':[382072,20335304],'sections':[
+    return {'pick_side':'home','featured_player_ids':[382072,20335304],'sections':[
         {'kind':'hook','text':"I'm backing Tenerife in this one. For me, there is enough in their recent games to make a narrow win the call I like.",'evidence_ids':['home_form']},
         {'kind':'players','text':"Enric Gallego starts for Tenerife, and Jordi Escobar is in Ceuta's eleven. Those are the names that catch my eye when I look at this matchup.",'evidence_ids':['player_382072','player_20335304']},
-        {'kind':'players','text':"Tenerife have scored 8 goals across their last 5 matches. That gives me a concrete reason to back them here. I can see this being close right through to the finish.",'evidence_ids':['home_form']} ]}
+        {'kind':'players','text':"Tenerife have scored 8 goals across their last 5 league matches. That gives me a concrete reason to back them here. I can see this being close right through to the finish. That is what pushes me towards them in this particular matchup.",'evidence_ids':['home_form']} ]}
 
 
 def response(value):
@@ -85,3 +85,23 @@ def test_curly_apostrophe_is_personal_voice(editorial_input,draft):
 def test_hook_must_lead_with_personal_pick(editorial_input,draft):
     draft['sections'][0]['text']='Something has got to give in this matchup tonight.'
     with pytest.raises(EditorialError,match='first-person pick'): validate_draft(draft,editorial_input,evidence_packet(editorial_input))
+
+
+def test_editorial_pick_side_matches_score(editorial_input,draft):
+    draft['pick_side']='away'
+    with pytest.raises(EditorialError,match='pick side'): validate_draft(draft,editorial_input,evidence_packet(editorial_input))
+
+def test_goals_do_not_establish_chance_creation(editorial_input,draft):
+    draft['sections'][0]['text']="I'm backing Tenerife because Ceuta struggled to create chances."
+    with pytest.raises(EditorialError,match='boilerplate'): validate_draft(draft,editorial_input,evidence_packet(editorial_input))
+
+
+@pytest.mark.parametrize('model',['gpt-5.2','gpt-4.1'])
+def test_editorial_model_request_compatibility(editorial_input,draft,model):
+    session=Mock();session.post.side_effect=[response(draft),response({'approved':True,'issues':[]})]
+    EditorialClient(api_key='synthetic-key',session=session,model=model).write(editorial_input)
+    for call in session.post.call_args_list:
+        body=call.kwargs['json']
+        assert body['model']==model
+        if model=='gpt-5.2': assert body['reasoning']=={'effort':'none'}
+        else: assert 'reasoning' not in body

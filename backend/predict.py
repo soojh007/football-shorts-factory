@@ -46,7 +46,8 @@ def render_prediction(prediction,out):
     audio_metadata=out/f'{prefix}_narration.json'
     settings={'script_sha256':sha256(prediction['script'].encode()),'model':'gpt-4o-mini-tts','voice':'coral','speed':1.1}
     if prediction.get('context'):
-        settings['delivery']='personal-analyst-v3'
+        settings['delivery']='personal-analyst-v4'
+        settings['speed']=1.0
         settings['instructions']='Read the script exactly. Sound like a thoughtful football fan giving my own take to one friend: conversational, warm, with natural emphasis and pauses. Do not use a newsreader or broadcast-announcer voice. Do not add words.'
     audio=None
     if audio_path.exists() and audio_metadata.exists():
