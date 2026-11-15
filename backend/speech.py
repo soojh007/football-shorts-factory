@@ -13,6 +13,14 @@ from backend.analysis import AnalysisResult
 VOICES = ("alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar")
 MODELS = ("gpt-4o-mini-tts", "tts-1", "tts-1-hd")
 MAX_AUDIO_BYTES = 32 * 1024 * 1024
+PERSONAL_VOICE = "cedar"
+PERSONAL_VOICE_INSTRUCTIONS = (
+    "Read the supplied script exactly in English. Use an adult male voice with a light, natural "
+    "Singaporean English accent. Keep pronunciation clear for an international audience, with a warm "
+    "mid-low register and relaxed, confident delivery, like a football fan sharing my own take with one friend. "
+    "Use natural pauses and emphasis. Keep the accent consistent without exaggeration or caricature. "
+    "Do not add Singlish particles or change any words. Do not use a newsreader or broadcast-announcer tone."
+)
 DISCLOSURE = "This narration uses an AI-generated voice."
 
 
