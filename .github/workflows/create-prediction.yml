@@ -1,4 +1,5 @@
 name: Create prediction video
+run-name: "${{ inputs.validate_only && 'Check' || 'Create' }} prediction · ${{ inputs.match }}"
 on:
   workflow_dispatch:
     inputs:

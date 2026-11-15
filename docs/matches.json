@@ -1,24 +1,24 @@
 {
   "schema_version": 1,
-  "fetched_at": "2026-11-15T12:32:33.814195+00:00",
+  "fetched_at": "2026-11-15T13:47:38.316748+00:00",
   "window_hours": 24,
   "competition_id": null,
   "coverage": "all_accessible_competitions",
   "leagues": [
     {
-      "id": 3356,
-      "name": "Community Shield",
-      "country": "Singapore"
-    },
-    {
-      "id": 24,
-      "name": "FA Cup",
-      "country": "England"
+      "id": 74,
+      "name": "Eerste Divisie",
+      "country": "Netherlands"
     },
     {
       "id": 1082,
       "name": "Friendly International",
       "country": "World"
+    },
+    {
+      "id": 567,
+      "name": "La Liga 2",
+      "country": "Spain"
     },
     {
       "id": 8,
@@ -33,6 +33,18 @@
   ],
   "matches": [
     {
+      "fixture_id": 19744985,
+      "home": "Granada",
+      "away": "Las Palmas",
+      "league_id": 567,
+      "competition": "La Liga 2",
+      "kickoff": "2026-11-15T15:15:00+00:00",
+      "kickoff_singapore": "15 Nov 23:15 SGT",
+      "minutes_to_kickoff": 87,
+      "lineups_status": "not_checked",
+      "creation_window_open": false
+    },
+    {
       "fixture_id": 19905776,
       "home": "Suriname",
       "away": "Eswatini",
@@ -40,7 +52,31 @@
       "competition": "Friendly International",
       "kickoff": "2026-11-15T17:00:00+00:00",
       "kickoff_singapore": "16 Nov 01:00 SGT",
-      "minutes_to_kickoff": 267,
+      "minutes_to_kickoff": 192,
+      "lineups_status": "not_checked",
+      "creation_window_open": false
+    },
+    {
+      "fixture_id": 19744986,
+      "home": "Eldense",
+      "away": "Sabadell",
+      "league_id": 567,
+      "competition": "La Liga 2",
+      "kickoff": "2026-11-15T17:30:00+00:00",
+      "kickoff_singapore": "16 Nov 01:30 SGT",
+      "minutes_to_kickoff": 222,
+      "lineups_status": "not_checked",
+      "creation_window_open": false
+    },
+    {
+      "fixture_id": 19744987,
+      "home": "SD Eibar",
+      "away": "Cádiz",
+      "league_id": 567,
+      "competition": "La Liga 2",
+      "kickoff": "2026-11-15T17:30:00+00:00",
+      "kickoff_singapore": "16 Nov 01:30 SGT",
+      "minutes_to_kickoff": 222,
       "lineups_status": "not_checked",
       "creation_window_open": false
     }
