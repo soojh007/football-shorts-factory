@@ -45,9 +45,9 @@ test('server failures lock uncertain result instead of encouraging duplicate upl
 test('disconnect clears credentials and prevents further authenticated requests',async()=>{
  const {client,calls}=setup();await client.connect(TOKEN);client.disconnect();assert.equal(client.connected,false);await assert.rejects(client.create(MATCH,{now:NOW}),/Connect GitHub/);assert.equal(calls.length,2);
 });
-test('refuses broad classic tokens and wrong repository permissions',async()=>{
+test('refuses broad classic tokens and inaccessible repositories',async()=>{
  const {client}=setup();await assert.rejects(client.connect('ghp_synthetic_classic_token'),/fine-grained/);
- const denied=new WorkflowConnection(async()=>reply(200,{permissions:{push:false}}));await assert.rejects(denied.connect(TOKEN),/write access/);assert.equal(denied.connected,false);
+ const denied=new WorkflowConnection(async()=>reply(404));await assert.rejects(denied.connect(TOKEN),/cannot access/);assert.equal(denied.connected,false);
 });
 test('expired token disconnects and does not reveal response text',async()=>{
  const {client}=setup(reply(401,{message:TOKEN}));await client.connect(TOKEN);await assert.rejects(client.create(MATCH,{now:NOW}),/expired/);assert.equal(client.connected,false);
@@ -60,4 +60,9 @@ test('untrusted run URLs cannot become page links',async()=>{
 });
 test('validation smoke mode explicitly disables retries and generation',async()=>{
  const {client,calls}=setup();await client.connect(TOKEN);await client.create(MATCH,{now:NOW,validateOnly:true});assert.deepEqual(JSON.parse(calls[2].options.body).inputs,{match:'19744985',auto_retry:false,validate_only:true});
+});
+
+test('Actions-only token does not need Contents push permission',async()=>{
+ const responses=[reply(200,{permissions:{push:false}}),reply(200,{state:'active'}),reply(204)];
+ const client=new WorkflowConnection(async()=>responses.shift());await client.connect(TOKEN);assert.equal((await client.create(MATCH,{now:NOW})).status,'accepted');
 });

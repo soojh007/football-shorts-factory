@@ -28,8 +28,6 @@ export class WorkflowConnection{
    const repo=await this.#request('');
    if(repo.status===401)throw Error('GitHub rejected this token. Check its expiry and try a new token.');
    if(!repo.ok)throw Error('This token cannot access football-shorts-factory. Select only this repository when creating it.');
-   const data=await repo.json();
-   if(data.permissions?.push!==true)throw Error('This GitHub account needs repository write access.');
    const workflow=await this.#request('/actions/workflows/'+WORKFLOW);
    if(!workflow.ok)throw Error('Allow Actions: read and write for football-shorts-factory.');
    if((await workflow.json()).state!=='active')throw Error('The prediction workflow is disabled on GitHub.');
