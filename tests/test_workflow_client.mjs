@@ -66,3 +66,10 @@ test('Actions-only token does not need Contents push permission',async()=>{
  const responses=[reply(200,{permissions:{push:false}}),reply(200,{state:'active'}),reply(204)];
  const client=new WorkflowConnection(async()=>responses.shift());await client.connect(TOKEN);assert.equal((await client.create(MATCH,{now:NOW})).status,'accepted');
 });
+
+test('connection is not usable before checks finish',async()=>{
+ let resolveRepo;const repo=new Promise(resolve=>{resolveRepo=resolve;});let count=0;
+ const client=new WorkflowConnection(async()=>++count===1?repo:reply(200,{state:'active'}));const connecting=client.connect(TOKEN);
+ assert.equal(client.connected,false);await assert.rejects(client.create(MATCH,{now:NOW}),/Connect GitHub/);
+ resolveRepo(reply(200));await connecting;assert.equal(client.connected,true);
+});

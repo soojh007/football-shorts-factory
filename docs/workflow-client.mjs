@@ -9,11 +9,11 @@ export function readiness(match,now=Date.now()){
  return {ready:true,message:'Create video'};
 }
 export class WorkflowConnection{
- #token='';#fetch;#states=new Map();
+ #token='';#ready=false;#fetch;#states=new Map();
  constructor(fetchImpl=globalThis.fetch.bind(globalThis)){this.#fetch=fetchImpl;}
- get connected(){return Boolean(this.#token);}
+ get connected(){return this.#ready&&Boolean(this.#token);}
  state(fixtureId){return this.#states.get(fixtureId)||null;}
- disconnect(){this.#token='';}
+ disconnect(){this.#token='';this.#ready=false;}
  async #request(path,options={}){
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
   try{return await this.#fetch(API+path,{...options,credentials:'omit',referrerPolicy:'no-referrer',redirect:'error',cache:'no-store',signal:controller.signal,
@@ -31,7 +31,7 @@ export class WorkflowConnection{
    const workflow=await this.#request('/actions/workflows/'+WORKFLOW);
    if(!workflow.ok)throw Error('Allow Actions: read and write for football-shorts-factory.');
    if((await workflow.json()).state!=='active')throw Error('The prediction workflow is disabled on GitHub.');
-   return true;
+   this.#ready=true;return true;
   }catch(error){this.disconnect();throw Error(error instanceof TypeError||error.name==='AbortError'?'Could not connect to GitHub. Check your connection and try again.':error.message);}
  }
  async create(match,{validateOnly=false,now=Date.now()}={}){
