@@ -14,6 +14,7 @@ from backend.analyze import save_text
 from backend.lineups import LineupsNotReady, add_lineup_sections, confirmed_lineups
 from backend.contextual_prediction import contextual_prediction,venue_context,venue_changed
 from backend.research import ResearchClient
+from backend.editorial import EditorialClient,EditorialError
 from backend.player_media import collect_player_media
 from backend.main import ROOT, positive_int, save_json
 from backend.predict import collect, render_prediction
@@ -158,6 +159,10 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         research=researcher.brief(source['fixture'])
     prediction=contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id,research=research)
     save_json(out/f'{fixture_id}_web_research.json',research)
+    report('Writing a personal football take with the editorial agent')
+    editor=EditorialClient()
+    with editor.session:
+        prediction=editor.write(prediction)
     report('Preparing real player visuals and first-person narration')
     prediction['media_assets']=collect_player_media(prediction,out)
     if not 75<=prediction['word_count']<=150:
@@ -247,8 +252,7 @@ def main(argv=None):
         from backend.video import VideoError
         from backend.research import ResearchError
         from backend.player_media import MediaError
-        from backend.research import ResearchError
-        safe=(PredictionError,YouTubeError,SportmonksError,SpeechError,CaptionError,VideoError,ResearchError,MediaError)
+        safe=(PredictionError,YouTubeError,SportmonksError,SpeechError,CaptionError,VideoError,ResearchError,MediaError,EditorialError)
         print(str(exc) if isinstance(exc,safe) else 'The workflow could not finish. Check the local setup and retry.',file=sys.stderr)
         return 1
 

@@ -119,6 +119,8 @@ def setup_workflow(monkeypatch,ready):
     monkeypatch.setattr('backend.workflow.contextual_prediction',contextual)
     researcher=MagicMock();researcher.brief.return_value={'performed':True,'claims':[],'sources':[]}
     monkeypatch.setattr('backend.workflow.ResearchClient',lambda:researcher)
+    editor=MagicMock();editor.write.side_effect=lambda prediction:prediction
+    monkeypatch.setattr('backend.workflow.EditorialClient',lambda:editor)
     monkeypatch.setattr('backend.workflow.collect_player_media',lambda *args:[])
     monkeypatch.setattr('backend.workflow.venue_context',lambda *args:{'name':'Test venue'})
     return client

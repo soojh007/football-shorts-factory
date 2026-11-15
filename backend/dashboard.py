@@ -62,8 +62,9 @@ class JobStore:
             from backend.captions import CaptionError
             from backend.video import VideoError
             from backend.research import ResearchError
+            from backend.editorial import EditorialError
             from backend.player_media import MediaError
-            safe=(PredictionError,SportmonksError,YouTubeError,SpeechError,CaptionError,VideoError,ResearchError,MediaError)
+            safe=(PredictionError,SportmonksError,YouTubeError,SpeechError,CaptionError,VideoError,ResearchError,MediaError,EditorialError)
             self.update(job_id,state='failed',message=str(exc) if isinstance(exc,safe) else 'The workflow could not finish. Check setup and retry.')
 
 
