@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from backend.video import text_block
 
 INK, CREAM, CORAL, GREEN = '#122a30', '#f4f1e7', '#fc654c', '#c0ff69'
-STYLE_VERSION = 6
+STYLE_VERSION = 7
 
 
 def section_at(prediction, word):
@@ -75,10 +75,10 @@ def form_badges(draw, sequence, y, phase):
             text_block(draw,result,(x,y,x+116,y+84),43,INK,max_lines=1)
 
 
-def draw_prediction_frame(prediction, caption, progress, *, animation=1.0):
-    if prediction.get('context') and prediction.get('media_assets'):
+def draw_prediction_frame(prediction, caption, progress, *, animation=1.0,time_seconds=0):
+    if prediction.get('context'):
         from backend.personal_video import draw_personal_frame
-        return draw_personal_frame(prediction,caption,progress,animation)
+        return draw_personal_frame(prediction,caption,progress,animation,time_seconds=time_seconds)
     phase=min(1,max(0,animation))
     ease=1-(1-phase)**3
     image=Image.new('RGB',(1080,1920),CREAM)

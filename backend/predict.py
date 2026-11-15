@@ -86,7 +86,8 @@ def render_prediction(prediction,out):
         # Include every caption boundary so words remain synchronized.
         duration=measured['duration_seconds']
         ticks={0.0,duration}
-        ticks.update(min(duration,index/8) for index in range(int(duration*8)+1))
+        motion_fps=30 if any(asset.get('kind')=='video' for asset in prediction.get('media_assets',[])) else 8
+        ticks.update(min(duration,index/motion_fps) for index in range(int(duration*motion_fps)+1))
         ticks.update(caption['start'] for caption in captions)
         ticks.update(caption['end'] for caption in captions)
         ticks=sorted(ticks)
@@ -108,7 +109,7 @@ def render_prediction(prediction,out):
                 previous_kind=kind
             path=workdir/f'frame_{i:04}.png'
             draw_prediction_frame(prediction,caption,start/duration,
-                                  animation=min(1,(start-section_start)/0.85)).save(path)
+                                  animation=min(1,(start-section_start)/0.85),time_seconds=start).save(path)
             frames.append(path)
             scenes.append({'start':start,'end':end})
         staged=workdir/'video.mp4'
@@ -119,7 +120,7 @@ def render_prediction(prediction,out):
     save_text(out/f'{prefix}_captions.srt',srt_text(aligned['captions']))
     save_json(out/f'{prefix}_render.json',{'content_type':'prediction','fixture_id':prediction['fixture_id'],
         'league_id':prediction['league_id'],'as_of':prediction['as_of'],
-        'style_version':STYLE_VERSION,'graphics_motion_fps':8,'footer_visible':False,
+        'style_version':STYLE_VERSION,'graphics_motion_fps':motion_fps,'footer_visible':False,
         'prediction_sha256':prediction_content_hash(prediction),'script_sha256':settings['script_sha256'],
         'audio_sha256':sha256(audio),
         'video_sha256':sha256((out/f'{prefix}.mp4').read_bytes()),'alignment_coverage':aligned['alignment_coverage'],

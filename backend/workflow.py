@@ -80,9 +80,9 @@ def prediction_upload_body(prediction):
         'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #Prediction')
     research=(prediction.get('context') or {}).get('web_research') or {}
     urls=list(dict.fromkeys(claim['source_url'] for claim in research.get('claims',[])))[:3]
-    credits=[f"{asset['name']}: {asset.get('artist','')} / {asset.get('license','')} / {asset.get('source_url','')}" for asset in prediction.get('media_assets',[])]
+    credits=[f"{asset['name']}: {asset.get('title','Player action media')} / {asset.get('artist','')} / {asset.get('license','')} {asset.get('license_url','')} / {asset.get('source_url','')} (cropped/animated; clips excerpted and muted)" for asset in prediction.get('media_assets',[])]
     if urls: description+='\n\nResearch sources:\n'+'\n'.join(urls)
-    if credits: description+='\n\nPlayer image credits:\n'+'\n'.join(credits)
+    if credits: description+='\n\nPlayer photo/video credits:\n'+'\n'.join(credits)
     if not title or len(title)>100 or any(char in title+description for char in '<>') or len(description.encode())>5000:
         raise YouTubeError('The generated upload metadata exceeds YouTube limits; review the match names.')
     return {'snippet':{'title':title,'description':description,'categoryId':'17','defaultLanguage':'en',
@@ -165,6 +165,8 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         prediction=editor.write(prediction)
     report('Preparing real player visuals and first-person narration')
     prediction['media_assets']=collect_player_media(prediction,out)
+    counts={kind:sum(asset.get('kind','image')==kind for asset in prediction['media_assets']) for kind in ('video','image')}
+    report(f"Player media ready: {counts['video']} clips, {counts['image']} photos")
     if not 75<=prediction['word_count']<=150:
         raise PredictionError('The narration is outside the video word budget; review the team names.')
     report('Preparing the prediction and confirmed team sheets')
