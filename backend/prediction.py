@@ -14,7 +14,9 @@ class PredictionError(ValueError):
 
 
 def teams_for_preview(fixture, as_of, league_id=8):
-    if fixture.get('league_id') != league_id or fixture.get('state_id') != 1:
+    if type(fixture.get('league_id')) is not int or fixture['league_id']<=0:
+        raise PredictionError('Fixture competition identity is missing.')
+    if (league_id is not None and fixture.get('league_id') != league_id) or fixture.get('state_id') != 1:
         raise PredictionError('Prediction requires a not-started fixture in the configured league.')
     state = fixture.get('state') or {}
     if state.get('id', 1) != 1:
@@ -133,7 +135,7 @@ def make_prediction(fixture, histories, *, as_of=None, league_id=8):
         {'kind': 'home_form', 'text': f"{h} have scored {forms['home']['goals_for']} and conceded {forms['home']['goals_against']} across those {forms['home']['sample_size']} games."},
         {'kind': 'away_form', 'text': f"{a} have {forms['away']['wins']} {away_wins} and {forms['away']['draws']} {away_draws} in their last {forms['away']['sample_size']}, scoring {forms['away']['goals_for']} and conceding {forms['away']['goals_against']}."},
         {'kind': 'pick', 'text': f"The model combines recent scoring with the other side's conceding. My score pick: {h} {pick['home']}, {a} {pick['away']}."},
-        {'kind': 'caveat', 'text': "That is speculative. This model is not calibrated, doesn't adjust for opponent strength, and doesn't know the lineups. In a friendly, changes in personnel can matter."},
+        {'kind': 'caveat', 'text': "That is speculative. This model is not calibrated, doesn't adjust for opponent strength, and doesn't know the lineups. Changes in personnel can matter."},
     ]
     script = ' '.join(section['text'] for section in sections)
     return {'schema_version': 1, 'content_type': 'prediction', 'fixture_id': fixture['id'],

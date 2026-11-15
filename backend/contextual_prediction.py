@@ -24,6 +24,9 @@ def venue_context(fixture,team_id):
         role='neutral'
     elif country is None:
         role='unknown'
+    elif own.get('country_id')==other.get('country_id'):
+        # Domestic clubs share a country: country alone proves no home-ground edge.
+        role='neutrality_unverified'
     elif country==own.get('country_id') and neutral is False:
         role='own_country'
     elif country==other.get('country_id') and neutral is False:
@@ -98,9 +101,10 @@ def distribution(home_rate,away_rate):
     return probabilities,outcome,{'home':h,'away':a},p/mass
 
 
-def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=1082,research=None):
+def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,research=None):
     if lineups.get('confirmed') is not True or lineups.get('fixture_id')!=fixture.get('id'):
         raise PredictionError('The contextual forecast requires matching confirmed lineups.')
+    league_id=fixture.get('league_id') if league_id is None else league_id
     result=make_prediction(fixture,histories,as_of=as_of,league_id=league_id)
     profiles={};venues={}
     for side in ('home','away'):
@@ -137,7 +141,7 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=1082,resea
     venue_text=(f"This one's in {place}. I give {home} a small venue edge on home soil." if venue['role']=='own_country'
         else f"This one's in {place}, so I am not assuming a home-ground advantage." if venue['role'] in ('neutral','third_country','neutrality_unverified','unknown')
         else f"This one's in {place}. I give {away} the small venue edge here.")
-    lineup_text=(f"I'm checking the actual eleven. {home} retain {h['latest_starters_retained']} starters from their latest sampled friendly; "
+    lineup_text=(f"I'm checking the actual eleven. {home} retain {h['latest_starters_retained']} starters from their latest sampled match; "
                  f"{away} retain {a['latest_starters_retained']}. That changes how I weight their recent results.")
     claims=(research or {}).get('claims') or []
     news=next((claim for claim in claims if claim['status']=='confirmed' and claim['topic']=='team_news'),None)
