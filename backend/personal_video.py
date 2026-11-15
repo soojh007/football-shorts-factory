@@ -37,22 +37,30 @@ def draw_personal_frame(prediction,caption,progress,animation):
     text_block(draw,label,(66,118,1014,182),34,LIME,'left',1)
     home,away=prediction['teams']['home']['name'],prediction['teams']['away']['name']
     text_block(draw,f'{home} × {away}',(64,205,1016,330),64,WHITE,'left',2)
-    text_block(draw,'MY VIEW. NOT A GUARANTEE.',(66,340,1014,390),25,ORANGE,'left',1)
+    text_block(draw,'MY MATCHDAY PICK',(66,340,1014,390),25,ORANGE,'left',1)
     assets=prediction.get('media_assets') or []
-    selected={side:next((asset for asset in assets if asset['side']==side),None) for side in ('home','away')}
     kind=section_at(prediction,caption['word_start'])
+    first=0;scene_text=''
+    for section in prediction['sections']:
+        first+=len(section['text'].split())
+        if caption['word_start']<first:
+            scene_text=section['text'].casefold();break
+    selected={}
+    for side in ('home','away'):
+        candidates=[asset for asset in assets if asset['side']==side]
+        selected[side]=next((asset for asset in candidates if asset['name'].casefold() in scene_text),candidates[0] if candidates else None)
     offset=int(10*math.sin(progress*math.tau*2))
     if kind in ('hook','players','lineup_home','lineup_away','research'):
         photo(image,draw,selected['home'],(64,444+offset,506,1010+offset),animation)
         photo(image,draw,selected['away'],(574,444-offset,1016,1010-offset),animation)
         if kind=='hook':
-            text_block(draw,"I'M CHECKING THE XI",(66,1080,1014,1210),78,LIME,'left',2)
-            text_block(draw,'Not just the badge. Not just the last score.',(66,1240,1014,1345),35,WHITE,'left',2)
+            text_block(draw,"HERE'S MY TAKE",(66,1080,1014,1210),78,LIME,'left',2)
+            text_block(draw,'The players. The matchup. My call.',(66,1240,1014,1345),35,WHITE,'left',2)
         elif kind=='research':
-            text_block(draw,"WHAT I'VE CHECKED",(66,1074,1014,1180),67,LIME,'left',2)
+            text_block(draw,"THE MATCHUP",(66,1074,1014,1180),67,LIME,'left',2)
             research=prediction.get('context',{}).get('web_research',{})
             claim=next((claim for claim in research.get('claims',[]) if claim['status']=='confirmed'),None)
-            text_block(draw,claim['summary'] if claim else 'No extra team news verified. No invented injury claims.',(66,1190,1014,1380),36,WHITE,'left',4)
+            text_block(draw,claim['summary'] if claim else 'The detail behind my pick.',(66,1190,1014,1380),36,WHITE,'left',4)
         else:
             profiles=prediction.get('context',{}).get('lineup_profiles',{})
             for i,side in enumerate(('home','away')):

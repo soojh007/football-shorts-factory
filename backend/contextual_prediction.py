@@ -136,30 +136,12 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     preferred=home if outcome=='home' else away if outcome=='away' else 'a draw'
     featured={side:sorted(lineups[side]['starters'],key=lambda p:profiles[side]['player_ratings'].get(str(p['player_id']),-1),reverse=True)[:2] for side in ('home','away')}
     result['featured_players']=featured
-    venue=venues['home']
-    place=venue['city'] or venue['name']
-    venue_text=(f"This one's in {place}. I give {home} a small venue edge on home soil." if venue['role']=='own_country'
-        else f"This one's in {place}, so I am not assuming a home-ground advantage." if venue['role'] in ('neutral','third_country','neutrality_unverified','unknown')
-        else f"This one's in {place}. I give {away} the small venue edge here.")
-    lineup_text=(f"I'm checking the actual eleven. {home} retain {h['latest_starters_retained']} starters from their latest sampled match; "
-                 f"{away} retain {a['latest_starters_retained']}. That changes how I weight their recent results.")
-    claims=(research or {}).get('claims') or []
-    news=next((claim for claim in claims if claim['status']=='confirmed' and claim['topic']=='team_news'),None)
-    focus='players and the ground' if place else 'players and the available evidence'
-    sections=[{'kind':'hook','text':f"I'm leaning towards {preferred}. But I'm checking the {focus}, not just the last score."},
-              {'kind':'players','text':lineup_text}]
-    if place: sections.append({'kind':'venue','text':venue_text})
-    if news:
-        sections.append({'kind':'research','text':f"I've also checked the team news: {news['summary']}"})
-    elif (research or {}).get('performed'):
-        sections.append({'kind':'research','text':"I checked outside reports too, but I'm not adding unverified team news."})
-    basis='lineup-weighted form'
-    if venue['role'] in ('own_country','opponent_country'): basis+=' and the venue'
-    elif h['rating_factor_applied'] or a['rating_factor_applied']: basis+=' and available player ratings'
-    sections.extend([{'kind':'pick','text':f"My call is {home} {pick['home']}, {away} {pick['away']}. That's my read of the {basis}."},
-                     {'kind':'caveat','text':"What could trip me up? Opponent quality and late changes. This is my tentative pick, not a certainty."}])
-    if len(' '.join(section['text'] for section in sections).split())>150:
-        sections=[section for section in sections if section['kind']!='research']
+    # Offline assembly is a plain-language preview. Production uses EditorialClient.
+    home_player=featured['home'][0]['name'];away_player=featured['away'][0]['name']
+    sections=[{'kind':'hook','text':f"I'm backing {preferred} here. This is the sort of matchup where the starting eleven makes the difference for me."},
+        {'kind':'players','text':f"{home_player} starts for {home}, and {away_player} is in {away}'s eleven. Those are two names I'll be watching. {home} bring back {h['latest_starters_retained']} starters from their last sampled match, compared with {a['latest_starters_retained']} for {away}."},
+        {'kind':'players','text':f"Across their last {result['form']['home']['sample_size']} matches in this competition, {home} scored {result['form']['home']['goals_for']} goals. {away} scored {result['form']['away']['goals_for']} across their last {result['form']['away']['sample_size']}. That's the recent picture behind my call."},
+        {'kind':'pick','text':f"My call is {home} {pick['home']}, {away} {pick['away']}. That's my pick."}]
     result['sections']=sections
     result['script']=' '.join(section['text'] for section in sections)
     result['word_count']=len(result['script'].split())
