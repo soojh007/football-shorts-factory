@@ -177,3 +177,28 @@ def test_auto_wait_does_not_retry_api_failures(monkeypatch):
     with pytest.raises(SportmonksError):
         cloud_workflow.wait_for_lineups(123,{'starting_at':'2026-11-14 13:00:00'},auto_retry=True)
     fetch.assert_called_once()
+
+
+def test_wait_step_exports_fixture_without_starting_production(tmp_path,monkeypatch):
+    cloud_run_mocks(monkeypatch)
+    monkeypatch.setattr(cloud_workflow,'ROOT',tmp_path)
+    monkeypatch.setenv('CLOUD_VALIDATE_ONLY','false')
+    output=tmp_path/'output.txt';monkeypatch.setenv('GITHUB_OUTPUT',str(output))
+    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',lambda *args:{'confirmed':True})
+    production=Mock();monkeypatch.setattr(cloud_workflow,'run_workflow',production)
+    cloud_workflow.run(wait_only=True)
+    assert output.read_text()=='ready=true\nfixture_id=19878000\n'
+    production.assert_not_called()
+
+
+def test_create_step_reenters_guarded_production(monkeypatch):
+    monkeypatch.setenv('READY_FIXTURE_ID','19744985')
+    production=Mock();monkeypatch.setattr(cloud_workflow,'run_workflow',production)
+    cloud_workflow.create()
+    production.assert_called_once_with(19744985,upload=True)
+
+
+@pytest.mark.parametrize('value',['','bad','0','-1'])
+def test_create_step_rejects_missing_or_invalid_fixture(monkeypatch,value):
+    monkeypatch.setenv('READY_FIXTURE_ID',value)
+    with pytest.raises(CloudStateError):cloud_workflow.create()

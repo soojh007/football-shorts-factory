@@ -163,6 +163,13 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     editor=EditorialClient()
     with editor.session:
         prediction=editor.write(prediction)
+    editorial=prediction.get('editorial') or {}
+    for diagnostic in editorial.get('attempt_diagnostics',[]):
+        report(f"Narration attempt {diagnostic['attempt']}: {diagnostic['code']}")
+    if editorial.get('mode')=='grounded_backup':
+        report('AI draft did not pass checks; using an evidence-checked personal backup narration')
+    else:
+        report('Personal narration and factual review passed')
     report('Preparing real player visuals and first-person narration')
     prediction['media_assets']=collect_player_media(prediction,out)
     counts={kind:sum(asset.get('kind','image')==kind for asset in prediction['media_assets']) for kind in ('video','image')}
