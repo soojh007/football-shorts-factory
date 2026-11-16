@@ -10,7 +10,7 @@ from backend.editorial import EditorialClient,EditorialError,evidence_packet,val
 @pytest.fixture
 def editorial_input():
     p={'fixture_id':123,'competition':'La Liga 2','teams':{'home':{'name':'Tenerife'},'away':{'name':'Ceuta'}},
-       'forecast':{'score_pick':{'home':2,'away':1}},'form':{},'lineups':{},'context':{'lineup_profiles':{},'venue':{},'web_research':{'claims':[]}}}
+       'forecast':{'score_pick':{'home':2,'away':1}},'form':{},'lineups':{'confirmed':True},'context':{'lineup_profiles':{},'venue':{},'web_research':{'claims':[]}}}
     for side,name,pid in [('home','Enric Gallego',382072),('away','Jordi Escobar',20335304)]:
         p['form'][side]={'sample_size':5,'wins':3,'draws':1,'losses':1,'goals_for':8,'goals_against':4}
         p['lineups'][side]={'starters':[{'name':name,'player_id':pid}]}
@@ -61,9 +61,16 @@ def test_client_runs_independent_grounding_review(editorial_input,draft):
     assert session.post.call_args.kwargs['json']['store'] is False
 
 
-def test_grounding_failure_gets_one_revision_then_stops(editorial_input,draft):
+def test_grounding_failure_gets_one_revision_then_checked_backup(editorial_input,draft):
     session=Mock();session.post.side_effect=[response(draft),response({'approved':False,'issues':['Unsupported player ability.']}),response(draft),response({'approved':False,'issues':['Unsupported claim.']})]
-    with pytest.raises(EditorialError,match='no template fallback'): EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
+    result=EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
+    assert result['editorial']['mode']=='grounded_backup'
+    assert result['editorial']['programmatic_facts_checked'] is True
+    assert result['editorial']['grounding_review_passed'] is False
+    assert result['editorial']['attempt_diagnostics']==[{'attempt':1,'code':'grounding_rejected'},{'attempt':2,'code':'grounding_rejected'}]
+    assert 'Unsupported player ability' not in result['script']
+    assert 'Enric Gallego' in result['script'] and 'Jordi Escobar' in result['script']
+    assert result['forecast']==editorial_input['forecast']
     assert session.post.call_count==4
 
 
@@ -105,3 +112,33 @@ def test_editorial_model_request_compatibility(editorial_input,draft,model):
         assert body['model']==model
         if model=='gpt-5.2': assert body['reasoning']=={'effort':'none'}
         else: assert 'reasoning' not in body
+
+
+def test_malformed_ai_drafts_cannot_fail_the_whole_video(editorial_input):
+    session=Mock();session.post.side_effect=[response({'bad':'private rejected draft'}),response({'bad':'private rejected draft'})]
+    result=EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
+    assert result['editorial']['mode']=='grounded_backup'
+    assert 'private rejected draft' not in result['script']
+    assert 95<=result['word_count']<=150
+    assert all(x['code']=='schema' for x in result['editorial']['attempt_diagnostics'])
+
+
+def test_backup_never_uses_unconfirmed_starters(editorial_input):
+    from backend.editorial import grounded_backup
+    editorial_input['lineups']['confirmed']=False
+    with pytest.raises(EditorialError,match='confirmed'):
+        grounded_backup(editorial_input,evidence_packet(editorial_input),[])
+
+
+def test_public_diagnostics_do_not_echo_model_prose_or_secrets():
+    from backend.editorial import diagnostic_code
+    assert diagnostic_code('Evidence review: SECRET_KEY plus private script')=='grounding_rejected'
+    assert diagnostic_code('untrusted arbitrary private prose')=='draft_validation'
+
+
+def test_review_service_auth_failure_is_not_hidden_by_backup(editorial_input,draft):
+    session=Mock();bad=Mock(status_code=401)
+    session.post.side_effect=[response(draft),bad]
+    with pytest.raises(EditorialError,match='HTTP 401'):
+        EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
+    assert session.post.call_count==2

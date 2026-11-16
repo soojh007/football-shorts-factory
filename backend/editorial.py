@@ -9,9 +9,11 @@ from typing import Literal
 from pydantic import BaseModel,ConfigDict,Field,ValidationError
 import requests
 
-VERSION='personal-editorial-v1'
+VERSION='personal-editorial-v2'
 
 class EditorialError(ValueError): pass
+
+class EditorialServiceError(EditorialError): pass
 
 class Section(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -121,6 +123,47 @@ def validate_draft(value,prediction,packet):
     return result
 
 
+def diagnostic_code(message):
+    """Public diagnostics never include model prose, names, URLs or credentials."""
+    checks=(('Evidence review:','grounding_rejected'),('current total','word_budget'),
+            ('required structure','schema'),('starter','starter_reference'),('player','starter_reference'),
+            ('score','score_consistency'),('evidence IDs','evidence_reference'),('boilerplate','style'),
+            ('first-person','style'),('competition','form_scope'),('complete','incomplete_response'))
+    return next((code for phrase,code in checks if phrase in message),'draft_validation')
+
+
+def grounded_backup(prediction,packet,diagnostics):
+    """Facts are assembled by code; no rejected model statements are reused."""
+    if prediction.get('lineups',{}).get('confirmed') is not True:
+        raise EditorialError('A narration backup requires confirmed starting elevens.')
+    score=prediction['forecast']['score_pick']
+    side='home' if score['home']>score['away'] else 'away' if score['away']>score['home'] else 'draw'
+    home=prediction['teams']['home']['name'];away=prediction['teams']['away']['name']
+    h=prediction['form']['home'];a=prediction['form']['away']
+    players={s:next((p for p in packet['players'] if p['side']==s),None) for s in ('home','away')}
+    if not all(players.values()):raise EditorialError('No confirmed starter is available for the narration backup.')
+    hp,ap=players['home'],players['away']
+    scope='friendlies' if prediction.get('league_id')==1082 else 'games in this competition'
+    pick=home if side=='home' else away
+    hook=(f"I'm going for a draw between {home} and {away}. I see this being a close contest right through to the finish."
+          if side=='draw' else f"I'm backing {pick} here. For me, there is enough in this matchup to make them my pick.")
+    names=(f"Seeing {hp['name']} in {home}'s starting eleven catches my eye. {ap['name']} starts for {away} too. "
+           "Those are the two names I'll have my eye on from the first whistle.")
+    case=(f"{home} have scored {h['goals_for']} and conceded {h['goals_against']} in their last {h['sample_size']} {scope}. "
+          f"{away} have scored {a['goals_for']} and conceded {a['goals_against']} across their last {a['sample_size']}. "
+          "That is the recent picture behind my call.")
+    draft={'pick_side':side,'featured_player_ids':[hp['id'],ap['id']],
+        'sections':[{'kind':'hook','text':hook,'evidence_ids':['score_pick']},
+                    {'kind':'players','text':names,'evidence_ids':[f"player_{hp['id']}",f"player_{ap['id']}"]},
+                    {'kind':'players','text':case,'evidence_ids':['home_form','away_form']}]}
+    final_words=len((hook+' '+names+' '+case).split())+len(f"I'm going {home} {score['home']}, {away} {score['away']}. That's my pick.".split())
+    if final_words<95:draft['sections'][-1]['text']+=" I can see this being an interesting game from the first whistle to the last. That is where I land on this matchup."
+    result=validate_draft(draft,prediction,packet)
+    result['editorial'].update(mode='grounded_backup',model=None,grounding_review_passed=False,
+        programmatic_facts_checked=True,attempt_diagnostics=diagnostics)
+    return result
+
+
 PROMPT="""Write a personal football prediction Short, as a fan talking to one friend.
 Set pick_side to home/draw/away matching the supplied score_pick. OPEN WITH THE PICK in first person: 'I'm backing [team] to edge this' or 'I'm going for a draw'. Follow the supplied score_pick, without speaking its numbers yet.
 Write exactly THREE short scenes, 100–115 words TOTAL before the score reveal that the app adds. Use hook, players, players; use research/venue only if genuinely important. The input highlights at most four confirmed starters. Name 2–4 of those starters only, at least one from each team, copying their full names exactly. Select those IDs in featured_player_ids and name nobody else.
@@ -139,6 +182,7 @@ class EditorialClient:
     def write(self,prediction):
         packet=evidence_packet(prediction)
         feedback=None
+        diagnostics=[]
         for attempt in range(2):
             body={'model':self.model,'store':False,'max_output_tokens':2500,'instructions':PROMPT,
                   'input':json.dumps({'match_evidence':packet,'revision_feedback':feedback},ensure_ascii=False),
@@ -162,17 +206,19 @@ class EditorialClient:
                 if self.model=='gpt-5.2': review_body['reasoning']={'effort':'none'}
                 try:
                     reviewed=self.session.post('https://api.openai.com/v1/responses',headers={'Authorization':f'Bearer {self._key}'},json=review_body,timeout=90)
-                except requests.RequestException: raise EditorialError('The editorial evidence review request failed.') from None
-                if reviewed.status_code!=200: raise EditorialError(f'Editorial evidence review unavailable (HTTP {reviewed.status_code}).')
+                except requests.RequestException: raise EditorialServiceError('The editorial evidence review request failed.') from None
+                if reviewed.status_code!=200: raise EditorialServiceError(f'Editorial evidence review unavailable (HTTP {reviewed.status_code}).')
                 review_payload=reviewed.json()
                 if review_payload.get('status')!='completed': raise EditorialError('The evidence review did not complete.')
                 review_text=''.join(c['text'] for item in review_payload.get('output',[]) if item.get('type')=='message' for c in item.get('content',[]) if c.get('type')=='output_text')
                 review=Review.model_validate_json(review_text)
                 if not review.approved or review.issues:
                     raise EditorialError('Evidence review: '+'; '.join(review.issues or ['Revise unsupported assertions.']))
-                result['editorial'].update(model=self.model,grounding_review_passed=True)
+                result['editorial'].update(mode='ai_reviewed',model=self.model,grounding_review_passed=True,attempt_diagnostics=diagnostics)
                 return result
             except (ValueError,TypeError,KeyError) as exc:
+                if isinstance(exc,EditorialServiceError):raise
                 feedback=str(exc) if isinstance(exc,EditorialError) else 'Return valid schema JSON.'
                 self.last_feedback=feedback
-        raise EditorialError('Editorial narration failed its evidence/style checks after one revision; no template fallback was used.')
+                diagnostics.append({'attempt':attempt+1,'code':diagnostic_code(feedback)})
+        return grounded_backup(prediction,packet,diagnostics)

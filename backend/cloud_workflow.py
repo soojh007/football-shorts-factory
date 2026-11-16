@@ -85,7 +85,7 @@ def wait_for_lineups(fixture_id,fixture,*,auto_retry=False):
             first_check=False
 
 
-def run():
+def run(*,wait_only=False):
     from backend.video import require_tools
     require_tools()
     # Verify refresh/channel access even for a validation-only smoke run.
@@ -129,6 +129,21 @@ def run():
         print('Cloud account, match and confirmed-lineup checks passed. Validation only; no paid generation or upload.',flush=True)
         summary('Validation passed — no upload','The cloud account, match and confirmed lineup checks passed. Disable validation-only mode when you want to create and privately upload the video.')
         return
+    if wait_only:
+        path=os.getenv('GITHUB_OUTPUT')
+        if path:
+            with open(path,'a') as handle:handle.write(f'ready=true\nfixture_id={fixture_id}\n')
+        print('Official lineups ready. Starting the separate production step.',flush=True)
+        return
+    create(fixture_id)
+
+
+def create(fixture_id=None):
+    if fixture_id is None:
+        try:fixture_id=int(os.getenv('READY_FIXTURE_ID',''))
+        except ValueError:raise CloudStateError('Ready fixture ID is missing.') from None
+    if type(fixture_id) is not int or fixture_id<=0:raise CloudStateError('Ready fixture ID is invalid.')
+    # run_workflow rechecks kickoff, official XIs and account before paid work.
     run_workflow(fixture_id,upload=True)
     # Public repository logs/summaries intentionally omit the private video URL.
     summary('Private upload accepted','The video was uploaded privately. Open [YouTube Studio](https://studio.youtube.com/) to review processing and playback. Nothing was made public.')
@@ -143,10 +158,10 @@ def export():
 
 def main(argv=None):
     parser=argparse.ArgumentParser()
-    parser.add_argument('command',choices=('prepare','run','export'))
+    parser.add_argument('command',choices=('prepare','run','wait','create','export'))
     args=parser.parse_args(argv)
     try:
-        {'prepare':prepare,'run':run,'export':export}[args.command]()
+        {'prepare':prepare,'run':run,'wait':lambda:run(wait_only=True),'create':create,'export':export}[args.command]()
         return 0
     except Exception as exc:
         from backend.prediction import PredictionError

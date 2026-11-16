@@ -53,8 +53,14 @@ jobs:
       - name: Prepare secure credentials and recover upload state
         id: prepare
         run: python -m backend.cloud_workflow prepare
+      - name: Wait for kickoff window and confirmed lineups
+        id: readiness
+        run: python -m backend.cloud_workflow wait
       - name: Create video and upload privately
-        run: python -m backend.cloud_workflow run
+        if: steps.readiness.outputs.ready == 'true'
+        env:
+          READY_FIXTURE_ID: ${{ steps.readiness.outputs.fixture_id }}
+        run: python -m backend.cloud_workflow create
       - name: Encrypt upload state
         if: always() && steps.prepare.outputs.state_ready == 'true'
         run: python -m backend.cloud_workflow export
