@@ -17,7 +17,7 @@ from backend.research import ResearchClient
 from backend.editorial import EditorialClient,EditorialError
 from backend.player_media import collect_player_media
 from backend.main import ROOT, positive_int, save_json
-from backend.predict import collect, render_prediction
+from backend.predict import collect, render_prediction,prediction_duration
 from backend.prediction import PredictionError, make_prediction, prediction_content_hash, teams_for_preview
 from backend.prediction_video import STYLE_VERSION
 from backend.prematch import PrematchClient, kickoff_utc
@@ -102,7 +102,7 @@ def reusable_video(prediction, out):
                 or metadata.get('script_sha256') != sha256(prediction['script'].encode())
                 or metadata.get('audio_sha256') != sha256(audio)):
             return False
-        probe_video(video,wav_metadata(audio)['duration_seconds'])
+        probe_video(video,prediction_duration(wav_metadata(audio)['duration_seconds']))
         return True
     except (OSError,ValueError,KeyError,TypeError):
         return False

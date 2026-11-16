@@ -2,6 +2,8 @@
 import argparse
 from datetime import datetime,timedelta,timezone
 import json
+import io
+import wave
 from pathlib import Path
 import sys
 import tempfile
@@ -37,6 +39,30 @@ def collect(client,fixture_id,league_id,as_of,fixture=None):
             start=end+timedelta(days=1)
         histories[side]=rows
     return {'fixture':fixture,'histories':histories,'as_of':as_of.isoformat()}
+
+
+def pad_prediction_audio(audio,path,hold):
+    with wave.open(io.BytesIO(audio),'rb') as source:
+        params=source.getparams();data=source.readframes(source.getnframes())
+    with wave.open(str(path),'wb') as padded:
+        # Streaming TTS headers may advertise an unknown/huge frame count.
+        # Write a fresh header using the actual payload, not that count.
+        padded.setparams((params.nchannels,params.sampwidth,params.framerate,0,'NONE','not compressed'))
+        padded.writeframes(data+b'\0'*(round(hold*params.framerate)*params.nchannels*params.sampwidth))
+
+
+def prediction_duration(narration_duration):
+    return min(60.0,narration_duration+2.5)
+
+
+def final_prediction_caption(prediction,start,end):
+    first=0
+    for section in prediction['sections']:
+        if section['kind']=='pick':break
+        first+=len(section['text'].split())
+    score=prediction['forecast']['score_pick']
+    return {'start':start,'end':end,'word_start':first,'word_end':prediction['word_count'],
+            'text':f"{prediction['teams']['home']['name']} {score['home']}–{score['away']} {prediction['teams']['away']['name']}"}
 
 
 def render_prediction(prediction,out):
@@ -81,10 +107,16 @@ def render_prediction(prediction,out):
     with tempfile.TemporaryDirectory(prefix='.prediction-',dir=out) as folder:
         workdir=Path(folder)
         frames=[]
-        captions=aligned['captions']
+        captions=list(aligned['captions'])
+        duration=prediction_duration(measured['duration_seconds'])
+        hold=duration-measured['duration_seconds']
+        render_audio=audio_path
+        if hold>0:
+            render_audio=workdir/'narration_with_end_hold.wav'
+            pad_prediction_audio(audio,render_audio,hold)
+            captions.append(final_prediction_caption(prediction,measured['duration_seconds'],duration))
         # Render original graphic motion at 8 fps; FFmpeg outputs CFR at 30 fps.
         # Include every caption boundary so words remain synchronized.
-        duration=measured['duration_seconds']
         ticks={0.0,duration}
         motion_fps=30 if any(asset.get('kind')=='video' for asset in prediction.get('media_assets',[])) else 8
         ticks.update(min(duration,index/motion_fps) for index in range(int(duration*motion_fps)+1))
@@ -113,14 +145,14 @@ def render_prediction(prediction,out):
             frames.append(path)
             scenes.append({'start':start,'end':end})
         staged=workdir/'video.mp4'
-        encode_video(frames,scenes,audio_path,staged,measured['duration_seconds'],workdir)
-        verification=probe_video(staged,measured['duration_seconds'])
+        encode_video(frames,scenes,render_audio,staged,duration,workdir)
+        verification=probe_video(staged,duration)
         staged.replace(out/f'{prefix}.mp4')
         frames[0].replace(out/f'{prefix}_poster.png')
-    save_text(out/f'{prefix}_captions.srt',srt_text(aligned['captions']))
+    save_text(out/f'{prefix}_captions.srt',srt_text(captions))
     save_json(out/f'{prefix}_render.json',{'content_type':'prediction','fixture_id':prediction['fixture_id'],
         'league_id':prediction['league_id'],'as_of':prediction['as_of'],
-        'style_version':STYLE_VERSION,'graphics_motion_fps':motion_fps,'footer_visible':False,
+        'style_version':STYLE_VERSION,'narration_duration_seconds':measured['duration_seconds'],'end_card_hold_seconds':hold,'graphics_motion_fps':motion_fps,'footer_visible':False,
         'prediction_sha256':prediction_content_hash(prediction),'script_sha256':settings['script_sha256'],
         'audio_sha256':sha256(audio),
         'video_sha256':sha256((out/f'{prefix}.mp4').read_bytes()),'alignment_coverage':aligned['alignment_coverage'],
