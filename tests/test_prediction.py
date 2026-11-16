@@ -167,3 +167,48 @@ def test_subscribed_leagues_are_paginated_and_country_labeled():
     assert leagues[0]['country']=='England'
     assert session.get.call_args.args[0]=='https://api.sportmonks.com/v3/football/leagues'
     assert session.get.call_args.kwargs['params']['page']==2
+
+
+def test_final_card_shows_score_even_in_preview(forecast_input,monkeypatch):
+    import backend.personal_video as visual
+    fixture,histories=forecast_input
+    prediction=make_prediction(fixture,histories,as_of=NOW,league_id=1082)
+    prediction.update(design_preview=True,context={'venue':{}},media_assets=[])
+    first=sum(len(s['text'].split()) for s in prediction['sections'][:next(i for i,s in enumerate(prediction['sections']) if s['kind']=='pick')])
+    seen=[];original=visual.text_block
+    def record(draw,text,*args,**kwargs):
+        seen.append(text);return original(draw,text,*args,**kwargs)
+    monkeypatch.setattr(visual,'text_block',record)
+    draw_prediction_frame(prediction,{'word_start':first,'text':'My prediction.'},1)
+    score=prediction['forecast']['score_pick']
+    assert f"{score['home']} : {score['away']}" in seen
+    assert '— : —' not in seen
+
+
+def test_prediction_end_hold_keeps_video_under_sixty_seconds():
+    from backend.predict import prediction_duration
+    assert prediction_duration(35.75)==38.25
+    assert prediction_duration(59)==60
+    assert prediction_duration(60)==60
+
+
+def test_final_hold_caption_selects_pick_not_trailing_caveat(forecast_input):
+    from backend.predict import final_prediction_caption
+    fixture,histories=forecast_input
+    p=make_prediction(fixture,histories,as_of=NOW,league_id=1082)
+    caption=final_prediction_caption(p,40,42.5)
+    from backend.prediction_video import section_at
+    assert section_at(p,caption['word_start'])=='pick'
+    assert 'Home FC' in caption['text'] and 'Away FC' in caption['text']
+
+
+def test_end_hold_handles_streaming_wav_unknown_length(tmp_path):
+    import io,struct,wave
+    from backend.predict import pad_prediction_audio
+    from backend.speech import wav_metadata
+    buffer=io.BytesIO()
+    with wave.open(buffer,'wb') as wav:
+        wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(8000);wav.writeframes(b'\0\0'*8000)
+    audio=bytearray(buffer.getvalue());audio[4:8]=struct.pack('<I',0xffffffff);audio[40:44]=struct.pack('<I',0xffffffff)
+    path=tmp_path/'padded.wav';pad_prediction_audio(bytes(audio),path,2.5)
+    assert wav_metadata(path.read_bytes())['duration_seconds']==3.5

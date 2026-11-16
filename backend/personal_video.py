@@ -106,7 +106,7 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
         photo(image,draw,selected['home'],(64,450,506,920),animation,time_seconds)
         photo(image,draw,selected['away'],(574,450,1016,920),animation,time_seconds)
         score=prediction['forecast']['score_pick']
-        text='— : —' if prediction.get('design_preview') else f"{score['home']} : {score['away']}"
+        text=f"{score['home']} : {score['away']}"
         text_block(draw,'MY PICK',(66,977,1014,1057),39,LIME,'left',1)
         text_block(draw,text,(64,1070,1016,1350),235,WHITE,max_lines=1)
     else:
