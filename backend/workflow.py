@@ -186,6 +186,10 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     forecast_at=datetime.now(timezone.utc)
     prediction=contextual_prediction(source['fixture'],source['histories'],lineups,forecast_at,league_id=league_id,research=research)
     save_json(out/f'{fixture_id}_web_research.json',research)
+    from backend.narration_templates import choose_template
+    prediction['narration_template']=choose_template(out,os.getenv('YOUTUBE_CHANNEL_ID',''))
+    selected=prediction['narration_template']
+    report(f"Narration format {selected['index']+1}/4: {selected['name']}")
     report('Writing a personal football take with the editorial agent')
     editor=EditorialClient()
     with editor.session:

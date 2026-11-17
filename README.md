@@ -479,3 +479,16 @@ Free media now includes **CC BY-SA 4.0**, as well as CC0/public domain/CC BY. If
 The international forecast now uses a fitted FIFA-points/venue/recent-form goal model instead of the ±0.35 capped ranking adjustment. Fitting uses 3,815 pre-2023 matches, with 1,468 later matches through September 2024 for chronological validation; no 2026 match outcomes are included. On 91 holdout mismatches of at least 500 FIFA points, goal-margin MAE fell from 2.18 to 1.88 versus the old capped core. Full data provenance, limitations, coefficients, reproduction instructions and validation metrics are documented in [the strength-model report](docs/strength-model.md). Missing or incompatible points still use available-information fallbacks. This is historical validation of the strength component, not a claim that every score or probability is calibrated.
 
 Player images no longer carry an “Action photo · Archive” banner. Required licence and source credits stay in the upload description. Render style/version changes invalidate older cached layouts.
+
+### Four rotating narration formats
+
+Prediction videos cycle through four personal formats, with different openings, evidence order and final-score wording:
+
+1. **The direct pick** — verdict → named starters → latest-result/strength case → score.
+2. **The recent-result reaction** — latest results and personal reaction → starters → verdict → score.
+3. **The players-first take** — confirmed names to watch → latest results → verdict → score. Without confirmed starters, the opening uses team form instead.
+4. **The matchday question** — a football question → contrasting results → starters and verdict → score.
+
+Rotation is `1 → 2 → 3 → 4 → 1`, based on the number of unique successful prediction uploads to the configured channel. Existing encrypted upload receipts persist that count between GitHub runners, and production already serializes the receipt restore/create/upload cycle. Historical successful uploads count toward the starting position. Validation runs, local previews, failures and uncertain uploads do not advance it; duplicate receipt IDs count once. No new token, secret or state service is needed. Local concurrent uploads are not a coordinated rotation mechanism; the hosted workflow is the supported serialized production path.
+
+The AI writer gets the selected format as an explicit instruction. Local checks reject another direct-pick opening in the alternate formats. The code-owned backup also changes its structure, so AI draft rejection does not collapse every video into the same script. All four keep first-person delivery, supplied latest results, verified names when available and the unchanged numerical forecast as the final scene. Format names/indices are saved in private metadata and Actions progress, not spoken or displayed as video labels.
