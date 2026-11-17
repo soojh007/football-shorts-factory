@@ -498,3 +498,11 @@ The AI writer gets the selected format as an explicit instruction. Local checks 
 Pre-match **GET** requests retry connection/read timeouts and HTTP 429/500/502/503/504 up to three attempts with short bounded delays. A numeric or HTTP-date `Retry-After` is honoured only when it fits the five-second retry-delay limit; longer or unparseable values stop retries rather than being ignored. Authentication failures do not retry, and error messages never include raw exceptions, authenticated URLs or token values.
 
 Historical lineup/rating enrichment is optional. If its source remains temporarily unavailable, the run retains already verified results, skips the remaining detail requests to avoid a request storm, and records missing enrichment in private source metadata. Unavailable historical relationships/records are omitted individually. A temporarily unavailable cross-competition latest-match lookup uses competition-scoped results with that scope preserved in narration. Missing or invalid core fixture data, failed authentication and mismatched fixture identities still stop clearly. These retries apply only to read-only source requests, never to video generation or uncertain YouTube uploads.
+
+YouTube upload failures now report an allowlisted API reason and HTTP status when
+available. `uploadLimitExceeded` refers to the channel's upload limit;
+`quotaExceeded` / `dailyLimitExceeded` refer to the Google Cloud API project.
+Permission errors require checking the connected channel or OAuth authorization.
+Raw API messages, upload session URLs and credentials are never logged. Failed
+upload reservations remain blocked until reviewed in YouTube Studio; a failed
+run must not be blindly retried or its receipt deleted.
