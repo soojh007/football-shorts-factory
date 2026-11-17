@@ -171,3 +171,60 @@ def test_latest_opponent_reference_must_state_the_result(editorial_input,draft):
     draft['sections'][-1]['evidence_ids'].append('home_latest')
     with pytest.raises(EditorialError,match='latest completed result'):
         validate_draft(draft,editorial_input,evidence_packet(editorial_input))
+
+
+@pytest.mark.parametrize('index',range(4))
+@pytest.mark.parametrize('mode',['full','missing_lineups','draw','no_latest'])
+def test_all_four_backups_keep_facts_and_final_score(editorial_input,index,mode):
+    from backend.editorial import grounded_backup
+    from backend.narration_templates import closing_line
+    p=editorial_input
+    p['narration_template']={'index':index}
+    p['context']['latest_matches']={side:{'opponent':opponent,'result':'L','goals_for':1,'goals_against':2,'competition':'La Liga 2'}
+                                  for side,opponent in [('home','Japan FC'),('away','Paraguay FC')]}
+    p['context']['fifa_rankings']={side:{'rank':rank,'official':True,'ranking_date':'2026-11-01'}
+                                for side,rank in [('home',6),('away',149)]}
+    if mode=='missing_lineups':p['lineups']['confirmed']=False
+    if mode=='draw':p['forecast']['score_pick']={'home':1,'away':1}
+    if mode=='no_latest':p['context']['latest_matches']={};p['context']['fifa_rankings']={}
+    result=grounded_backup(p,evidence_packet(p),[])
+    assert result['script'].endswith(closing_line(p))
+    assert result['sections'][-1]['kind']=='pick'
+    assert result['editorial']['template_index']==index
+    assert 95<=result['word_count']<=150
+    if mode!='no_latest':assert 'lost to Japan FC' in result['script'] and 'lost to Paraguay FC' in result['script']
+    if mode=='missing_lineups':assert result['editorial']['featured_player_ids']==[]
+    if index==3:assert '?' in result['sections'][0]['text']
+
+
+def test_four_formats_have_distinct_openings(editorial_input):
+    from backend.editorial import grounded_backup
+    openings=[]
+    for index in range(4):
+        editorial_input['narration_template']={'index':index}
+        result=grounded_backup(editorial_input,evidence_packet(editorial_input),[])
+        openings.append(result['sections'][0]['text'])
+    assert len(set(openings))==4
+
+
+@pytest.mark.parametrize('index',range(4))
+def test_editorial_writer_receives_selected_format(editorial_input,index):
+    from backend.narration_templates import backup_draft,TEMPLATES
+    editorial_input['narration_template']={'index':index}
+    draft=backup_draft(editorial_input,evidence_packet(editorial_input))
+    session=Mock();session.post.side_effect=[response(draft),response({'approved':True,'issues':[]})]
+    result=EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
+    assert result['editorial']['mode']=='ai_reviewed'
+    assert TEMPLATES[index]['instructions'] in session.post.call_args_list[0].kwargs['json']['instructions']
+    assert result['editorial']['template_index']==index
+
+
+@pytest.mark.parametrize('index',[1,2,3])
+def test_alternate_formats_reject_another_direct_pick_opener(editorial_input,index):
+    from backend.narration_templates import backup_draft
+    editorial_input['narration_template']={'index':index}
+    packet=evidence_packet(editorial_input)
+    draft=backup_draft(editorial_input,packet)
+    draft['sections'][0]['text']="I'm backing Tenerife. "+draft['sections'][0]['text']
+    with pytest.raises(EditorialError,match='narration format opening'):
+        validate_draft(draft,editorial_input,packet)
