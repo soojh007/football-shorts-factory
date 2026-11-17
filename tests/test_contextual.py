@@ -265,3 +265,21 @@ def test_missing_lineups_keep_venue_research_and_final_score(contextual_input):
     for section in result['sections']:
         assert draw_personal_frame(result,{'word_start':word,'text':'My pick.'},0,1).size==(1080,1920)
         word+=len(section['text'].split())
+
+
+def test_production_uses_smaller_available_result_sample(contextual_input):
+    from backend.editorial import evidence_packet,grounded_backup
+    fixture,histories,lineups=contextual_input
+    lineups['confirmed']=False
+    histories={side:rows[:1] for side,rows in histories.items()}
+    result=contextual_prediction(fixture,histories,lineups,NOW)
+    assert all(form['sample_size']==1 for form in result['form'].values())
+    assert all(len(profile['samples'])==1 for profile in result['context']['lineup_profiles'].values())
+    assert grounded_backup(result,evidence_packet(result),[])['sections'][-1]['kind']=='pick'
+
+
+def test_no_results_never_fabricates_form(contextual_input):
+    fixture,histories,lineups=contextual_input
+    histories['home']=[]
+    with pytest.raises(PredictionError,match='No verified recent results'):
+        contextual_prediction(fixture,histories,lineups,NOW)

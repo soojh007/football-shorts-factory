@@ -110,7 +110,7 @@ def reusable_video(prediction, out):
 
 
 def enrich_history(source,now):
-    base=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=fixture_league_id(source['fixture']))
+    base=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=fixture_league_id(source['fixture']),min_matches=1)
     needed={m['fixture_id'] for form in base['form'].values() for m in form['matches']}
     enriched={}
     client=PrematchClient()
