@@ -25,4 +25,4 @@ jobs:
       - run: node --test tests/test_workflow_client.mjs
       - run: python -m pytest -q
       - name: Check optional FIFA table access
-        run: python -m backend.fifa_rankings --codes BRA SGP
+        run: python -m backend.fifa_rankings --diagnostics --codes BRA SGP
