@@ -108,6 +108,7 @@ def test_search_resolves_both_names(ready):
 def setup_workflow(monkeypatch,ready):
     client=MagicMock()
     monkeypatch.setattr('backend.workflow.PrematchClient',lambda:client)
+    monkeypatch.setattr('backend.fifa_rankings.fetch_rankings',lambda *args:[])
     monkeypatch.setattr('backend.workflow.lineup_fixture',lambda *args:deepcopy(ready[0]))
     monkeypatch.setattr('backend.workflow.collect',lambda *args,**kwargs:deepcopy(ready[1]))
     clock=Mock()
@@ -263,4 +264,16 @@ def test_missing_lineup_description_does_not_claim_confirmation():
     body=prediction_upload_body(prediction)
     assert 'Both official starting elevens were confirmed' not in body['snippet']['description']
     assert 'unavailable' in body['snippet']['description']
+    assert body['status']['privacyStatus']=='private'
+
+
+def test_sharealike_images_require_video_licence_and_attribution():
+    from backend.workflow import prediction_upload_body
+    p={'teams':{'home':{'name':'Home'},'away':{'name':'Away'}},'forecast':{'score_pick':{'home':1,'away':2}},
+        'league_id':1082,'kickoff':'2026-11-17','script':'My prediction.',
+        'media_assets':[{'name':'A Player','title':'Action photo','artist':'Photographer','license':'CC BY-SA 4.0',
+            'license_url':'https://creativecommons.org/licenses/by-sa/4.0/','source_url':'https://commons.wikimedia.org/wiki/File:Action.jpg'}]}
+    body=prediction_upload_body(p)
+    assert 'This video adaptation is licensed under CC BY-SA 4.0' in body['snippet']['description']
+    assert 'Photographer' in body['snippet']['description'] and 'Changes:' in body['snippet']['description']
     assert body['status']['privacyStatus']=='private'

@@ -33,7 +33,7 @@ def test_action_photo_has_identity_license_and_attribution():
 @pytest.mark.parametrize('payload',[
     commons_response(title='File:Different Player match.jpg',description='An unrelated player playing.'),
     commons_response(license='All rights reserved'),
-    commons_response(license='CC BY-SA 4.0'),
+    commons_response(license='CC BY-NC 4.0'),
     commons_response(description='A footballer attending a prime minister meeting.'),
     commons_response(title='File:Named Player profile.jpg',description='Named Player is a footballer.')])
 def test_unsupported_or_nonaction_images_are_not_used(payload):
@@ -87,3 +87,28 @@ def test_missing_action_media_renders_named_graphics():
        'sections':[{'kind':'hook','text':'My pick.'}],'featured_players':{'home':[{'name':'Home Starter','player_id':1,'jersey_number':9}],
                                                                   'away':[{'name':'Away Starter','player_id':2,'jersey_number':10}]}}
     assert draw_prediction_frame(p,{'word_start':0,'text':'My pick.'},0,time_seconds=1).size==(1080,1920)
+
+
+def test_sharealike_action_images_are_allowed_with_canonical_terms():
+    assets=commons_candidates('Named Player',session_for(commons_response(license='CC BY-SA 4.0')))
+    assert assets[0]['share_alike'] is True
+    assert assets[0]['license_url']=='https://creativecommons.org/licenses/by-sa/4.0/'
+
+
+def test_search_continues_beyond_featured_players(tmp_path,monkeypatch):
+    from backend.player_media import collect_player_media
+    calls=[]
+    def photo(name,session):
+        calls.append(name)
+        return None if name=='Featured Player' else {'kind':'image','license':'CC BY 4.0'}
+    monkeypatch.setattr('backend.player_media.commons_photo',photo)
+    monkeypatch.setattr('backend.action_media.catalog_candidates',lambda *args:[])
+    monkeypatch.setattr('backend.action_media.fetch_media',lambda *args:b'image')
+    monkeypatch.setattr('backend.media_review.is_action_photo',lambda *args,**kwargs:True)
+    monkeypatch.setattr('backend.action_media.save_asset',lambda *args:{'path':'/tmp/photo.png'})
+    p={'featured_players':{'home':[{'player_id':1,'name':'Featured Player'}]},
+       'lineups':{'home':{'starters':[{'player_id':2,'name':'Other Starter'}]}}}
+    assets=collect_player_media(p,tmp_path,session=Mock())
+    assert calls==['Featured Player','Other Starter']
+    assert assets[0]['name']=='Other Starter'
+    assert p['media_diagnostics'][0]['status']=='no_eligible_action_media'

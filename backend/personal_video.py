@@ -86,7 +86,12 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
             photo(image,draw,selected['away'],(574,444-offset,1016,1010-offset),animation,time_seconds)
         if kind=='hook':
             text_block(draw,"HERE'S MY TAKE",(66,1080,1014,1210),78,LIME,'left',2)
-            text_block(draw,'The players. The matchup. My call.',(66,1240,1014,1345),35,WHITE,'left',2)
+            ranks=prediction.get('context',{}).get('fifa_rankings',{})
+            if len(ranks)==2:
+                label='FIFA LIVE RANK' if any(r.get('official') is False for r in ranks.values()) else 'FIFA RANK'
+                text=f"{label}: #{ranks['home']['rank']} vs #{ranks['away']['rank']}\nAs of {ranks['home']['ranking_date']} / {ranks['away']['ranking_date']}"
+            else:text='The players. The matchup. My call.'
+            text_block(draw,text,(66,1230,1014,1370),30,WHITE,'left',3)
         elif kind=='research':
             text_block(draw,"THE MATCHUP",(66,1074,1014,1180),67,LIME,'left',2)
             research=prediction.get('context',{}).get('web_research',{})
@@ -95,10 +100,18 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
         else:
             profiles=prediction.get('context',{}).get('lineup_profiles',{})
             for i,side in enumerate(('home','away')):
-                retained=profiles.get(side,{}).get('latest_starters_retained')
-                text=f"{retained}/11 RETAINED" if retained is not None else f"{prediction['form'][side]['goals_for']} GOALS"
-                text_block(draw,text,(66+i*510,1090,506+i*510,1212),47,LIME,max_lines=2)
-            text_block(draw,'Recent results in this competition' if not prediction.get('lineups',{}).get('confirmed') else 'Compared with the latest sampled match',(66,1250,1014,1330),30,WHITE,'left',2)
+                latest=prediction.get('context',{}).get('latest_matches',{}).get(side)
+                if not latest:
+                    matches=prediction.get('form',{}).get(side,{}).get('matches',[])
+                    latest=matches[0] if matches else None
+                if latest:
+                    result={'W':'BEAT','L':'LOST TO','D':'DREW WITH'}[latest['result']]
+                    text=f"{result} {latest['opponent'].upper()}\n{latest['goals_for']}–{latest['goals_against']}"
+                else:
+                    retained=profiles.get(side,{}).get('latest_starters_retained')
+                    text=f"{retained}/11 RETAINED" if retained is not None else f"{prediction['form'][side]['goals_for']} GOALS"
+                text_block(draw,text,(66+i*510,1070,506+i*510,1230),38,LIME,max_lines=3)
+            text_block(draw,'LATEST COMPLETED RESULTS',(66,1270,1014,1350),30,WHITE,'left',2)
     elif kind=='venue':
         venue=prediction.get('context',{}).get('venue') or {}
         pitch(draw,(130,490,950,1080),'#44654a',5)

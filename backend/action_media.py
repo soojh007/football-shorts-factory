@@ -13,10 +13,10 @@ from urllib.parse import urlparse
 from PIL import Image,ImageOps
 import requests
 
-LICENSE_URLS={'CC0':'https://creativecommons.org/publicdomain/zero/1.0/','Public domain':'https://creativecommons.org/publicdomain/mark/1.0/','CC BY 2.0':'https://creativecommons.org/licenses/by/2.0/','CC BY 3.0':'https://creativecommons.org/licenses/by/3.0/','CC BY 4.0':'https://creativecommons.org/licenses/by/4.0/'}
-FREE_LICENSES={'CC0','Public domain','CC BY 2.0','CC BY 3.0','CC BY 4.0'}
-ACTION_WORDS=('training','match','playing','ball','entrenamiento','partido','jugando','balon','wedstrijd',' vs ')
-PORTRAIT_WORDS=('portrait','headshot','press conference','profile','mugshot','signing','prime minister','meeting')
+LICENSE_URLS={'CC BY-SA 4.0':'https://creativecommons.org/licenses/by-sa/4.0/','CC0':'https://creativecommons.org/publicdomain/zero/1.0/','Public domain':'https://creativecommons.org/publicdomain/mark/1.0/','CC BY 2.0':'https://creativecommons.org/licenses/by/2.0/','CC BY 3.0':'https://creativecommons.org/licenses/by/3.0/','CC BY 4.0':'https://creativecommons.org/licenses/by/4.0/'}
+FREE_LICENSES={'CC BY-SA 4.0','CC0','Public domain','CC BY 2.0','CC BY 3.0','CC BY 4.0'}
+ACTION_WORDS=('football','soccer','training','match','playing','ball','entrenamiento','partido','jugando','balon','wedstrijd',' vs ',' v ','fifa','uefa','world cup')
+PORTRAIT_WORDS=('portrait','headshot','press conference','profile','mugshot','signing','prime minister','meeting','roster','team photo','line-up','lineup')
 
 
 def plain(value): return html.unescape(re.sub('<[^>]+>','',value or ''))
@@ -28,8 +28,8 @@ def commons_candidates(name,session):
     if len(parts)<2:return []
     try:
         response=session.get('https://commons.wikimedia.org/w/api.php',params={
-            'action':'query','format':'json','generator':'search','gsrsearch':f'"{name}"',
-            'gsrnamespace':6,'gsrlimit':12,'prop':'imageinfo|categories','cllimit':50,'iiprop':'url|extmetadata|size|mime','iiurlwidth':1200},headers=HEADERS,timeout=15)
+            'action':'query','format':'json','generator':'search','gsrsearch':' '.join(parts)+' -intitle:cropped -intitle:portrait',
+            'gsrnamespace':6,'gsrlimit':24,'prop':'imageinfo|categories','cllimit':50,'iiprop':'url|extmetadata|size|mime','iiurlwidth':1200},headers=HEADERS,timeout=15)
         if response.status_code!=200:return []
         candidates=[]
         for page in (response.json().get('query') or {}).get('pages',{}).values():
@@ -52,10 +52,10 @@ def commons_candidates(name,session):
             if not action:continue
             if not video and (info.get('width',0)<400 or info.get('height',0)<300):continue
             candidates.append({'url':url,'source_url':info.get('descriptionurl'),'license':license_name,
-                'license_url':(meta.get('LicenseUrl') or {}).get('value') or LICENSE_URLS[license_name],'artist':plain((meta.get('Artist') or {}).get('value','')),
+                'license_url':LICENSE_URLS[license_name],'artist':plain((meta.get('Artist') or {}).get('value','')),
                 'title':plain(page.get('title','')),'description':description,'kind':'video' if video else 'image',
-                'visual_type':'action' if action else 'portrait','identity_match':'full player name in file title' if in_title else 'explicit player description' if in_description else 'exact player category','archive':True})
-        return sorted(candidates,key=lambda item:(item['kind']=='video',item['visual_type']=='action'),reverse=True)
+                'width':info.get('width',0),'height':info.get('height',0),'visual_type':'action' if action else 'portrait','share_alike':license_name=='CC BY-SA 4.0','identity_match':'full player name in file title' if in_title else 'explicit player description' if in_description else 'exact player category','archive':True})
+        return sorted(candidates,key=lambda item:(item['kind']=='video',item['width']>=item['height'],'cropped' not in item['title'].lower()),reverse=True)
     except (requests.RequestException,ValueError,TypeError,AttributeError):return []
 
 

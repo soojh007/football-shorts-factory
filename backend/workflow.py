@@ -79,9 +79,12 @@ def prediction_upload_body(prediction):
         'Experimental lineup- and venue-conditioned forecast, not calibrated. Player/venue coefficients are heuristic, not validated accuracy claims.\n'
         'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #Prediction')
     research=(prediction.get('context') or {}).get('web_research') or {}
-    urls=list(dict.fromkeys(claim['source_url'] for claim in research.get('claims',[])))[:3]
+    rank_urls=[row[key] for row in research.get('fifa_rankings',[]) for key in ('source_url','release_source_url')]
+    urls=list(dict.fromkeys(rank_urls+[claim['source_url'] for claim in research.get('claims',[])]))[:5]
     credits=[f"{asset['name']}: {asset.get('title','Player action media')} / {asset.get('artist','')} / {asset.get('license','')} {asset.get('license_url','')} / {asset.get('source_url','')} (cropped/animated; clips excerpted and muted)" for asset in prediction.get('media_assets',[])]
     if urls: description+='\n\nResearch sources:\n'+'\n'.join(urls)
+    if any(asset.get('license')=='CC BY-SA 4.0' for asset in prediction.get('media_assets',[])):
+        description+='\n\nThis video adaptation is licensed under CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/ . Original works retain their credited licences. Changes: cropped, animated, captions and narration added.'
     if credits: description+='\n\nPlayer photo/video credits:\n'+'\n'.join(credits)
     if not title or len(title)>100 or any(char in title+description for char in '<>') or len(description.encode())>5000:
         raise YouTubeError('The generated upload metadata exceeds YouTube limits; review the match names.')
@@ -153,10 +156,32 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         source=enrich_history(source,now)
     # Validate data sufficiency before paying for web research.
     contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id)
+    from backend.freshness import latest_completed
+    from backend.prediction import teams_for_preview
+    report('Checking latest completed matches across accessible competitions')
+    client=PrematchClient()
+    with client.session:
+        latest=latest_completed(client,teams_for_preview(source['fixture'],now,league_id),now)
+    source['latest_matches']=latest
+    from backend.fifa_rankings import fetch_rankings
+    report('Reading available FIFA rankings from the official table')
+    fifa=fetch_rankings(source['fixture'],now)
     report('Researching official announcements and credible reports on the internet')
     researcher=ResearchClient()
     with researcher.session:
-        research=researcher.brief(source['fixture'])
+        research=researcher.brief({**source['fixture'],'recent_results':latest})
+        national=[p for p in source['fixture'].get('participants',[]) if p.get('type')=='national' and p.get('gender')=='male']
+        if not fifa and len(national)==2 and len(research.get('fifa_rankings',[]))<2:
+            report('Looking up the official FIFA ranking release and national-team entries')
+            ranking_brief=researcher.brief(source['fixture'],ranking_only=True)
+            merged={row['team_id']:row for row in research.get('fifa_rankings',[])}
+            for row in ranking_brief.get('fifa_rankings',[]):
+                if row['team_id'] not in merged or row['ranking_date']>=merged[row['team_id']]['ranking_date']:merged[row['team_id']]=row
+            research['fifa_rankings']=list(merged.values())
+            research['sources'].extend(ranking_brief.get('sources',[]))
+    if fifa:research['fifa_rankings']=fifa
+    report(f"Verified FIFA rankings available: {len(research.get('fifa_rankings',[]))}")
+    research['provider_latest']=latest
     prediction=contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id,research=research)
     save_json(out/f'{fixture_id}_web_research.json',research)
     report('Writing a personal football take with the editorial agent')
