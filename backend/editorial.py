@@ -169,6 +169,9 @@ def grounded_backup(prediction,packet,diagnostics):
     pick=home if side=='home' else away
     hook=(f"I'm going for a draw between {home} and {away}. I see this being a close contest right through to the finish."
           if side=='draw' else f"I'm backing {pick} here. For me, there is enough in this matchup to make them my pick.")
+    backed_latest=packet['evidence'].get(f'{side}_latest')
+    if side!='draw' and backed_latest and backed_latest['result']=='L':
+        hook=f"I'm backing {pick}. Even after that defeat to {backed_latest['opponent']}, I still fancy them to win this one."
     names=(f"Seeing {hp['name']} in {home}'s starting eleven catches my eye. {ap['name']} starts for {away} too. "
            "Those are the two names I'll have my eye on from the first whistle.") if hp and ap else (
         f"For me, the interesting part is how {home} and {away} compare heading into this game. "
@@ -184,9 +187,9 @@ def grounded_backup(prediction,packet,diagnostics):
     latest_keys=[f'{s}_latest' for s in ('home','away') if f'{s}_latest' in packet['evidence']]
     if latest_keys:
         case=' '.join(latest_sentence(packet['evidence'][key]) for key in latest_keys)
-        case+=f" Across the sampled {scope}, {home} have scored {h['goals_for']} goals and {away} have scored {a['goals_for']}. That's the picture behind my call."
+        case+=f" In recent {scope}, {home} have scored {h['goals_for']} goals and {away} have scored {a['goals_for']}. That's the picture behind my call."
     draft={'pick_side':side,'featured_player_ids':[hp['id'],ap['id']] if hp and ap else [],
-        'sections':[{'kind':'hook','text':hook,'evidence_ids':['score_pick']+rank_keys},
+        'sections':[{'kind':'hook','text':hook,'evidence_ids':['score_pick']+rank_keys+([f'{side}_latest'] if backed_latest else [])},
                     {'kind':'players','text':names,'evidence_ids':[f"player_{hp['id']}",f"player_{ap['id']}"] if hp and ap else ['home_form','away_form']},
                     {'kind':'players','text':case,'evidence_ids':['home_form','away_form']+latest_keys}]}
     if latest_keys and len((hook+' '+names+' '+case).split())>125:

@@ -162,7 +162,7 @@ class ResearchClient:
         query=f"{' vs '.join(names)} {kickoff_utc(fixture).date().isoformat()} confirmed lineups venue latest completed results FIFA official ranking"
         if ranking_only:
             instructions=('Find the latest OFFICIAL published FIFA men ranking available before the cutoff for each supplied senior national team. '
-                'First find the latest release date on the official FIFA main ranking table. Then verify each team rank using dated FIFA ranking news, release documents or its official association/confederation. '
+                'Start at https://inside.fifa.com/fifa-rankings/world-ranking/men and find the latest published release date on that official main table. Then verify each team rank using dated FIFA ranking news, release documents or its official association/confederation. '
                 'The dynamic team profile historical highlight often has an OLD release; never use it as the latest official ranking. Prefer FIFA news articles about the newest release. '
                 'Do not use live/provisional ranks or secondary prediction websites. Missing points may be null; missing verified rank must be omitted. '
                 'Return venue_check unverified, claims [], fifa_rankings with team_id, rank, points, ranking_date, official true, source_url, release_source_url, and gaps. '

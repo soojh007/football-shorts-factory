@@ -90,6 +90,10 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
             if len(ranks)==2:
                 label='FIFA LIVE RANK' if any(r.get('official') is False for r in ranks.values()) else 'FIFA RANK'
                 text=f"{label}: #{ranks['home']['rank']} vs #{ranks['away']['rank']}\nAs of {ranks['home']['ranking_date']} / {ranks['away']['ranking_date']}"
+            elif ranks:
+                side,row=next(iter(ranks.items()))
+                label='FIFA live' if row.get('official') is False else 'FIFA ranking'
+                text=f"{label}: {prediction['teams'][side]['name']} #{row['rank']}\nAs of {row['ranking_date']}"
             else:text='The players. The matchup. My call.'
             text_block(draw,text,(66,1230,1014,1370),30,WHITE,'left',3)
         elif kind=='research':
