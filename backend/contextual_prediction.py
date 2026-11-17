@@ -73,8 +73,9 @@ def lineup_profile(team_id,current,histories,form,cutoff):
                 historical_ratings.append(value)
                 if player['player_id'] in wanted:
                     player_ratings.setdefault(player['player_id'],[]).append(value)
-    if len(samples)<3:
-        raise PredictionError('Fewer than three recent matches have usable historical starting XIs. A scores-only forecast will not be substituted.')
+    if len(samples)<3 or not wanted:
+        samples=[{**match,'starters_retained':None,'lineup_weight':1.0} for match in form['matches']]
+        player_ratings={}; historical_ratings=[]
     current_values=[sum(values)/len(values) for values in player_ratings.values()]
     average=sum(current_values)/len(current_values) if current_values else None
     baseline=sum(historical_ratings)/len(historical_ratings) if historical_ratings else None
@@ -102,8 +103,11 @@ def distribution(home_rate,away_rate):
 
 
 def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,research=None):
-    if lineups.get('confirmed') is not True or lineups.get('fixture_id')!=fixture.get('id'):
-        raise PredictionError('The contextual forecast requires matching confirmed lineups.')
+    if lineups.get('fixture_id')!=fixture.get('id'):
+        raise PredictionError('The contextual forecast requires matching fixture identity.')
+    lineups=deepcopy(lineups)
+    if not lineups.get('confirmed'):
+        for side in ('home','away'):lineups[side]['starters']=[]
     league_id=fixture.get('league_id') if league_id is None else league_id
     result=make_prediction(fixture,histories,as_of=as_of,league_id=league_id)
     profiles={};venues={}
@@ -137,11 +141,17 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     featured={side:sorted(lineups[side]['starters'],key=lambda p:profiles[side]['player_ratings'].get(str(p['player_id']),-1),reverse=True)[:2] for side in ('home','away')}
     result['featured_players']=featured
     # Offline assembly is a plain-language preview. Production uses EditorialClient.
-    home_player=featured['home'][0]['name'];away_player=featured['away'][0]['name']
+    home_player=featured['home'][0]['name'] if featured['home'] else None;away_player=featured['away'][0]['name'] if featured['away'] else None
     sections=[{'kind':'hook','text':f"I'm backing {preferred} here. This is the sort of matchup where the starting eleven makes the difference for me."},
         {'kind':'players','text':f"{home_player} starts for {home}, and {away_player} is in {away}'s eleven. Those are two names I'll be watching. {home} bring back {h['latest_starters_retained']} starters from their last sampled match, compared with {a['latest_starters_retained']} for {away}."},
         {'kind':'players','text':f"Across their last {result['form']['home']['sample_size']} matches in this competition, {home} scored {result['form']['home']['goals_for']} goals. {away} scored {result['form']['away']['goals_for']} across their last {result['form']['away']['sample_size']}. That's the recent picture behind my call."},
         {'kind':'pick','text':f"My call is {home} {pick['home']}, {away} {pick['away']}. That's my pick."}]
+    if not lineups.get('confirmed'):
+        sections=[sections[0],sections[2],sections[-1]]
+        sections[0]['text']=f"I'm backing {preferred} here. For me, this matchup has the makings of an interesting contest."
+        result['forecast']['limitations'].append('Confirmed lineups unavailable; no starter continuity or player-rating adjustment applied.')
+    if lineups.get('confirmed') and (h['latest_starters_retained'] is None or a['latest_starters_retained'] is None):
+        sections[1]['text']=f"{home_player} starts for {home}, and {away_player} is in {away}'s eleven. Those are two names I'll be watching."
     result['sections']=sections
     result['script']=' '.join(section['text'] for section in sections)
     result['word_count']=len(result['script'].split())

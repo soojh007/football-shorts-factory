@@ -8,7 +8,7 @@ import sys
 import time
 
 from backend.cloud_receipts import CloudStateError,pack_receipts,restore_latest
-from backend.lineups import LineupsNotReady,confirmed_lineups
+from backend.lineups import LineupsNotReady,available_lineups
 from backend.main import ROOT
 from backend.prematch import PrematchClient,kickoff_utc
 from backend.workflow import find_matches,lineup_fixture,run_workflow
@@ -54,7 +54,7 @@ def wait_for_lineups(fixture_id,fixture,*,auto_retry=False):
             return False
         now=datetime.now(timezone.utc)
         try:
-            confirmed_lineups(fixture,now)
+            available_lineups(fixture,now)
             return True
         except LineupsNotReady as exc:
             if not auto_retry:
@@ -77,7 +77,7 @@ def wait_for_lineups(fixture_id,fixture,*,auto_retry=False):
             while time.monotonic()<wake:
                 time.sleep(max(0,min(60,wake-time.monotonic())))
             if datetime.now(timezone.utc)>=kickoff_utc(fixture):
-                summary('Stopped at kickoff — no video or upload created','Official XIs were not ready before kickoff. No generation or upload was started.')
+                summary('Stopped at kickoff — no video or upload created','The final-hour window was not reached before kickoff. No generation or upload was started.')
                 return False
             client=PrematchClient()
             with client.session:
@@ -110,12 +110,28 @@ def run(*,wait_only=False):
                 and os.getenv('CLOUD_VALIDATE_ONLY','false').lower()!='true')
     if not wait_for_lineups(fixture_id,fixture,auto_retry=auto_retry):
         return
+    if already_uploaded(fixture_id):
+        return
+    if os.getenv('CLOUD_VALIDATE_ONLY','false').lower()=='true':
+        print('Cloud account and match-window checks passed. Validation only; no paid generation or upload.',flush=True)
+        summary('Validation passed — no upload','The cloud account and match-window checks passed. Disable validation-only mode when you want to create and privately upload the video.')
+        return
+    if wait_only:
+        path=os.getenv('GITHUB_OUTPUT')
+        if path:
+            with open(path,'a') as handle:handle.write(f'ready=true\nfixture_id={fixture_id}\n')
+        print('Match window ready. Starting the separate production step.',flush=True)
+        return
+    create(fixture_id)
+
+
+def already_uploaded(fixture_id):
     receipt_path=ROOT/'generated'/f'{fixture_id}_prediction_youtube_upload.json'
     if receipt_path.exists():
         try:
             receipt=json.loads(receipt_path.read_text())
             valid=(receipt.get('state')=='uploaded'
-                and receipt.get('channel_id')==channel['id']
+                and receipt.get('channel_id')==os.environ.get('YOUTUBE_CHANNEL_ID')
                 and isinstance(receipt.get('video_id'),str)
                 and VIDEO_PATTERN.fullmatch(receipt['video_id']))
         except (ValueError,AttributeError,OSError):
@@ -124,18 +140,25 @@ def run(*,wait_only=False):
             raise CloudStateError('A previous upload is uncertain or mismatched. Check YouTube Studio before creating another video.')
         print('An earlier upload record exists for this match. No paid generation or duplicate upload was started.',flush=True)
         summary('Already uploaded — no duplicate created','A successful upload record already exists for this match. Check YouTube Studio; this run did not regenerate or upload the video again.')
-        return
-    if os.getenv('CLOUD_VALIDATE_ONLY','false').lower()=='true':
-        print('Cloud account, match and confirmed-lineup checks passed. Validation only; no paid generation or upload.',flush=True)
-        summary('Validation passed — no upload','The cloud account, match and confirmed lineup checks passed. Disable validation-only mode when you want to create and privately upload the video.')
-        return
-    if wait_only:
-        path=os.getenv('GITHUB_OUTPUT')
-        if path:
-            with open(path,'a') as handle:handle.write(f'ready=true\nfixture_id={fixture_id}\n')
-        print('Official lineups ready. Starting the separate production step.',flush=True)
-        return
-    create(fixture_id)
+        return True
+    return False
+
+def readiness():
+    """Wait for the time window without holding upload credentials or the production lock."""
+    client=PrematchClient()
+    with client.session:
+        matches=find_matches(os.getenv('MATCH_INPUT',''),client)
+        if len(matches)!=1:
+            raise CloudStateError('Select one upcoming fixture using its Sportmonks fixture ID.')
+        fixture_id=matches[0]['id']
+        fixture=lineup_fixture(client,fixture_id)
+    retry=(os.getenv('CLOUD_AUTO_RETRY','false').lower()=='true'
+           and os.getenv('CLOUD_VALIDATE_ONLY','false').lower()!='true')
+    if not wait_for_lineups(fixture_id,fixture,auto_retry=retry):return
+    path=os.getenv('GITHUB_OUTPUT')
+    if path:
+        with open(path,'a') as handle:handle.write(f'ready=true\nfixture_id={fixture_id}\n')
+    print('Kickoff window ready. Missing lineups will not delay production.',flush=True)
 
 
 def create(fixture_id=None):
@@ -143,7 +166,16 @@ def create(fixture_id=None):
         try:fixture_id=int(os.getenv('READY_FIXTURE_ID',''))
         except ValueError:raise CloudStateError('Ready fixture ID is missing.') from None
     if type(fixture_id) is not int or fixture_id<=0:raise CloudStateError('Ready fixture ID is invalid.')
-    # run_workflow rechecks kickoff, official XIs and account before paid work.
+    if already_uploaded(fixture_id):return
+    if os.getenv('CLOUD_VALIDATE_ONLY','false').lower()=='true':
+        service=youtube_service(load_credentials())
+        try:
+            if current_channel(service)['id']!=os.environ.get('YOUTUBE_CHANNEL_ID'):
+                raise CloudStateError('The authorized YouTube channel does not match the configured channel.')
+        finally:service.close()
+        summary('Validation passed — no upload','Cloud credentials and match window checked. No generation or upload was started.')
+        return
+    # Recheck kickoff and account before paid work.
     run_workflow(fixture_id,upload=True)
     # Public repository logs/summaries intentionally omit the private video URL.
     summary('Private upload accepted','The video was uploaded privately. Open [YouTube Studio](https://studio.youtube.com/) to review processing and playback. Nothing was made public.')
@@ -158,10 +190,10 @@ def export():
 
 def main(argv=None):
     parser=argparse.ArgumentParser()
-    parser.add_argument('command',choices=('prepare','run','wait','create','export'))
+    parser.add_argument('command',choices=('prepare','run','wait','readiness','create','export'))
     args=parser.parse_args(argv)
     try:
-        {'prepare':prepare,'run':run,'wait':lambda:run(wait_only=True),'create':create,'export':export}[args.command]()
+        {'readiness':readiness,'prepare':prepare,'run':run,'wait':lambda:run(wait_only=True),'create':create,'export':export}[args.command]()
         return 0
     except Exception as exc:
         from backend.prediction import PredictionError

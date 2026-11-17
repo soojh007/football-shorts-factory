@@ -3,6 +3,7 @@ from PIL import Image,ImageDraw,ImageOps,ImageChops
 import math
 from backend.player_media import media_frame
 from backend.video import text_block
+from backend.prediction_video import pitch
 
 BG,WHITE,LIME,ORANGE='#101814','#faf5e8','#c2ff67','#ff8055'
 
@@ -11,7 +12,10 @@ def photo(image,draw,asset,box,phase,time_seconds=0):
     x0,y0,x1,y1=box
     draw.rounded_rectangle((x0+9,y0+13,x1+9,y1+13),radius=25,fill='#050a07')
     draw.rounded_rectangle(box,radius=25,fill='#263a2c')
-    if asset and asset.get('kind')=='graphic':
+    if asset and asset.get('kind')=='team':
+        pitch(draw,(x0+35,y0+80,x1-35,y1-155),'#658452',3)
+        text_block(draw,asset['name'],(x0+18,y1-135,x1-18,y1-18),36,WHITE,max_lines=3)
+    elif asset and asset.get('kind')=='graphic':
         center=(x0+x1)//2;top=y0+75
         draw.polygon([(center-80,top),(center-145,top+45),(center-110,top+100),(center-80,top+82),(center-80,top+245),(center+80,top+245),(center+80,top+82),(center+110,top+100),(center+145,top+45),(center+80,top)],fill='#385c40',outline=LIME,width=4)
         text_block(draw,str(asset.get('jersey_number') or 'XI'),(center-65,top+55,center+65,top+195),70,WHITE,max_lines=1)
@@ -69,6 +73,8 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
             if starters:
                 player=starters[0]
                 selected[side]={'kind':'graphic','name':player['name'],'jersey_number':player.get('jersey_number')}
+            else:
+                selected[side]={'kind':'team','name':prediction['teams'][side]['name']}
     offset=int(10*math.sin(progress*math.tau*2))
     if kind in ('hook','players','lineup_home','lineup_away','research'):
         action=[selected[side] for side in ('home','away') if selected[side] and selected[side].get('visual_type')=='action']
@@ -90,9 +96,9 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
             profiles=prediction.get('context',{}).get('lineup_profiles',{})
             for i,side in enumerate(('home','away')):
                 retained=profiles.get(side,{}).get('latest_starters_retained')
-                text=f"{retained}/11 RETAINED" if retained is not None else 'CONFIRMED STARTER'
+                text=f"{retained}/11 RETAINED" if retained is not None else f"{prediction['form'][side]['goals_for']} GOALS"
                 text_block(draw,text,(66+i*510,1090,506+i*510,1212),47,LIME,max_lines=2)
-            text_block(draw,'Compared with the latest sampled match',(66,1250,1014,1330),30,WHITE,'left',2)
+            text_block(draw,'Recent results in this competition' if not prediction.get('lineups',{}).get('confirmed') else 'Compared with the latest sampled match',(66,1250,1014,1330),30,WHITE,'left',2)
     elif kind=='venue':
         venue=prediction.get('context',{}).get('venue') or {}
         pitch(draw,(130,490,950,1080),'#44654a',5)

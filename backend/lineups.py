@@ -56,3 +56,15 @@ def add_lineup_sections(prediction, lineups):
     result['script'] = ' '.join(section['text'] for section in sections)
     result['word_count'] = len(result['script'].split())
     return result
+
+
+def available_lineups(fixture, now, league_id=None):
+    """Use only fully verified team sheets; absence never blocks production."""
+    teams = teams_for_preview(fixture, now, league_id)
+    if (kickoff_utc(fixture)-now).total_seconds()>3600:
+        raise LineupsNotReady('This match starts more than an hour from now. Return within the final hour before kickoff.')
+    try:
+        return confirmed_lineups(fixture, now, league_id)
+    except LineupsNotReady:
+        return {'confirmed':False,'fixture_id':fixture['id'],'checked_at':now.isoformat(),
+                **{side:{'team_id':team['id'],'starters':[]} for side,team in teams.items()}}

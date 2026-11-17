@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from backend.video import text_block
 
 INK, CREAM, CORAL, GREEN = '#122a30', '#f4f1e7', '#fc654c', '#c0ff69'
-STYLE_VERSION = 8
+STYLE_VERSION = 9
 
 
 def section_at(prediction, word):

@@ -11,7 +11,7 @@ import unicodedata
 from dotenv import load_dotenv
 
 from backend.analyze import save_text
-from backend.lineups import LineupsNotReady, add_lineup_sections, confirmed_lineups
+from backend.lineups import LineupsNotReady, add_lineup_sections, confirmed_lineups, available_lineups
 from backend.contextual_prediction import contextual_prediction,venue_context,venue_changed
 from backend.research import ResearchClient
 from backend.editorial import EditorialClient,EditorialError
@@ -73,8 +73,8 @@ def prediction_upload_body(prediction):
     score=prediction['forecast']['score_pick']
     title=f'{h} vs {a} prediction | {prediction["kickoff"][:10]}'
     competition=prediction.get('competition') or f"Competition {prediction['league_id']}"
-    description=(f"{competition} prediction: {h} {score['home']}–{score['away']} {a}.\n"
-        'Both official starting elevens were confirmed when this video was created.\n\n'
+    description=(f"{competition} prediction: {h} {score['home']}–{score['away']} {a}.\n" +
+        ('Both official starting elevens were confirmed when this video was created.\n\n' if prediction.get('lineups',{}).get('confirmed') else 'Confirmed starting elevens were unavailable; this prediction uses other available information.\n\n') +
         f"{prediction['script']}\n\n{DISCLOSURE}\n"
         'Experimental lineup- and venue-conditioned forecast, not calibrated. Player/venue coefficients are heuristic, not validated accuracy claims.\n'
         'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #Prediction')
@@ -128,13 +128,13 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     out.mkdir(parents=True,exist_ok=True)
     report=report or (lambda message: print(message,flush=True))
     require_tools()
-    report('Checking kickoff and official starting elevens')
+    report('Checking kickoff and available starting elevens')
     client=PrematchClient()
     with client.session:
         fixture=lineup_fixture(client,fixture_id)
         now=datetime.now(timezone.utc)
         league_id=fixture_league_id(fixture)
-        lineups=confirmed_lineups(fixture,now,league_id)
+        lineups=available_lineups(fixture,now,league_id)
         # Fail before paid generation if upload authorization is unavailable.
         if upload:
             report('Checking your connected YouTube channel')
@@ -176,7 +176,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     report(f"Player media ready: {counts['video']} clips, {counts['image']} photos")
     if not 75<=prediction['word_count']<=150:
         raise PredictionError('The narration is outside the video word budget; review the team names.')
-    report('Preparing the prediction and confirmed team sheets')
+    report('Preparing the prediction with available match evidence')
     save_json(out/f'{fixture_id}_prediction_source.json',source)
     save_json(out/f'{fixture_id}_prediction.json',prediction)
     save_text(out/f'{fixture_id}_prediction_script.txt',prediction['script'])
@@ -188,14 +188,14 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     video_path=out/f'{fixture_id}_prediction.mp4'
     result={'fixture_id':fixture_id,'video_path':str(video_path),'uploaded':False}
     if upload:
-        report('Rechecking official lineups before the private upload')
+        report('Rechecking kickoff and available lineups before the private upload')
         client=PrematchClient()
         with client.session:
             current=lineup_fixture(client,fixture_id)
-        latest=confirmed_lineups(current,datetime.now(timezone.utc),league_id)
+        latest=available_lineups(current,datetime.now(timezone.utc),league_id)
         # Player substitutions or rescheduling during production require a refresh.
         for side in ('home','away'):
-            if latest[side]!=lineups[side]:
+            if lineups.get('confirmed') and latest.get('confirmed') and latest[side]!=lineups[side]:
                 raise LineupsNotReady('The official lineup changed during production. Run again to rebuild the video before upload.')
         if venue_changed((prediction.get('context') or {}).get('venue',{}),venue_context(current,prediction['teams']['home']['id'])):
             raise LineupsNotReady('The venue changed during production. Run again before uploading.')
