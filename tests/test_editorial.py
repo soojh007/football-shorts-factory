@@ -126,8 +126,10 @@ def test_malformed_ai_drafts_cannot_fail_the_whole_video(editorial_input):
 def test_backup_never_uses_unconfirmed_starters(editorial_input):
     from backend.editorial import grounded_backup
     editorial_input['lineups']['confirmed']=False
-    with pytest.raises(EditorialError,match='confirmed'):
-        grounded_backup(editorial_input,evidence_packet(editorial_input),[])
+    result=grounded_backup(editorial_input,evidence_packet(editorial_input),[])
+    assert result['editorial']['featured_player_ids']==[]
+    assert all(not players for players in result['featured_players'].values())
+    assert 'starting eleven' not in result['script']
 
 
 def test_public_diagnostics_do_not_echo_model_prose_or_secrets():

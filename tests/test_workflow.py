@@ -126,14 +126,13 @@ def setup_workflow(monkeypatch,ready):
     return client
 
 
-def test_not_ready_stops_before_paid_generation(ready,tmp_path,monkeypatch):
+def test_missing_lineups_continue_with_available_evidence(ready,tmp_path,monkeypatch):
     ready[0]['metadata'][0]['values']['confirmed']=False
     setup_workflow(monkeypatch,ready)
     render=Mock()
     monkeypatch.setattr('backend.workflow.render_prediction',render)
-    with pytest.raises(LineupsNotReady):
-        run_workflow(19878000,out=tmp_path,upload=False)
-    render.assert_not_called()
+    run_workflow(19878000,out=tmp_path,upload=False)
+    render.assert_called_once()
 
 
 def test_local_workflow_does_not_authenticate_or_upload(ready,tmp_path,monkeypatch):
@@ -254,3 +253,14 @@ def test_search_returns_multiple_accessible_competitions(ready):
     assert {m['league_id'] for m in result}=={8,1082}
     assert client.fixture_window.call_args.kwargs['league_id'] is None
     assert len(confirmed_lineups(domestic,NOW)['home']['starters'])==11
+
+
+def test_missing_lineup_description_does_not_claim_confirmation():
+    from backend.workflow import prediction_upload_body
+    prediction={'teams':{'home':{'name':'Team A'},'away':{'name':'Team B'}},
+        'forecast':{'score_pick':{'home':2,'away':1}},'kickoff':'2026-11-17T12:00:00Z',
+        'league_id':1082,'script':'My pick.','lineups':{'confirmed':False}}
+    body=prediction_upload_body(prediction)
+    assert 'Both official starting elevens were confirmed' not in body['snippet']['description']
+    assert 'unavailable' in body['snippet']['description']
+    assert body['status']['privacyStatus']=='private'

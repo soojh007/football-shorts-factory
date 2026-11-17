@@ -72,10 +72,13 @@ def test_missing_ratings_no_fabricated_boost(contextual_input):
     assert profile['rating_factor']==1 and profile['rating_factor_applied'] is False
 
 
-def test_insufficient_historical_lineups_rejected(contextual_input):
+def test_insufficient_historical_lineups_use_available_form(contextual_input):
     fixture,histories,lineups=contextual_input
     for match in histories['home'][:3]: match['lineups']=[]
-    with pytest.raises(PredictionError,match='three'): contextual_prediction(fixture,histories,lineups,NOW)
+    result=contextual_prediction(fixture,histories,lineups,NOW)
+    assert result['context']['lineup_profiles']['home']['latest_starters_retained'] is None
+    assert result['context']['lineup_profiles']['home']['rating_factor']==1
+    assert 'None' not in result['script']
 
 
 def test_unverified_neutrality_no_home_edge(contextual_input):
@@ -241,3 +244,24 @@ def test_domestic_clubs_do_not_both_get_country_advantage(contextual_input):
     assert result['league_id']==8
     assert result['forecast']['assumptions']['applied_venue_factors']=={'home':1,'away':1}
     assert 'sampled friendly' not in result['script']
+
+
+def test_missing_lineups_keep_venue_research_and_final_score(contextual_input):
+    from backend.editorial import evidence_packet,grounded_backup
+    from backend.personal_video import draw_personal_frame
+    fixture,histories,lineups=contextual_input
+    lineups['confirmed']=False  # Even supplied expected-player rows must not leak.
+    result=contextual_prediction(fixture,histories,lineups,NOW,research={'performed':True,'claims':[]})
+    assert result['context']['venue']['name']=='Home Ground'
+    assert result['context']['web_research']['performed']
+    assert all(not rows for rows in result['featured_players'].values())
+    for profile in result['context']['lineup_profiles'].values():
+        assert profile['rating_factor']==1 and profile['latest_starters_retained'] is None
+    result=grounded_backup(result,evidence_packet(result),[])
+    assert 'player 0' not in result['script']
+    assert result['sections'][-1]['kind']=='pick'
+    assert result['script'].endswith("That's my pick.")
+    word=0
+    for section in result['sections']:
+        assert draw_personal_frame(result,{'word_start':word,'text':'My pick.'},0,1).size==(1080,1920)
+        word+=len(section['text'].split())

@@ -78,7 +78,7 @@ def cloud_run_mocks(monkeypatch):
 def test_validation_only_never_generates_or_uploads(monkeypatch):
     cloud_run_mocks(monkeypatch)
     monkeypatch.setenv('CLOUD_VALIDATE_ONLY','true')
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',lambda *args:{'confirmed':True})
+    monkeypatch.setattr(cloud_workflow,'available_lineups',lambda *args:{'confirmed':True})
     run=Mock()
     monkeypatch.setattr(cloud_workflow,'run_workflow',run)
     cloud_workflow.run()
@@ -88,7 +88,7 @@ def test_validation_only_never_generates_or_uploads(monkeypatch):
 def test_waiting_never_generates_or_uploads(monkeypatch):
     cloud_run_mocks(monkeypatch)
     monkeypatch.setenv('CLOUD_VALIDATE_ONLY','false')
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Not confirmed.')))
+    monkeypatch.setattr(cloud_workflow,'available_lineups',Mock(side_effect=LineupsNotReady('Not confirmed.')))
     run=Mock()
     monkeypatch.setattr(cloud_workflow,'run_workflow',run)
     cloud_workflow.run()
@@ -99,7 +99,7 @@ def test_restored_receipt_prevents_paid_regeneration(tmp_path,monkeypatch):
     cloud_run_mocks(monkeypatch)
     monkeypatch.setattr(cloud_workflow,'ROOT',tmp_path)
     monkeypatch.setenv('CLOUD_VALIDATE_ONLY','false')
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',lambda *args:{'confirmed':True})
+    monkeypatch.setattr(cloud_workflow,'available_lineups',lambda *args:{'confirmed':True})
     out=tmp_path/'generated'
     out.mkdir()
     (out/'19878000_prediction_youtube_upload.json').write_text(json.dumps({'state':'uploaded',
@@ -123,11 +123,11 @@ def retry_clock(monkeypatch):
     return state,base
 
 
-def test_auto_wait_continues_once_lineups_ready(monkeypatch):
+def test_auto_wait_continues_once_time_window_ready(monkeypatch):
     state,base=retry_clock(monkeypatch)
     fixture={'id':123,'starting_at':'2026-11-14 13:00:00'}
-    checks=Mock(side_effect=[LineupsNotReady('Not confirmed'),{'confirmed':True}])
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',checks)
+    checks=Mock(side_effect=[LineupsNotReady('Outside final hour'),{'confirmed':True}])
+    monkeypatch.setattr(cloud_workflow,'available_lineups',checks)
     fetch=Mock(return_value=fixture);monkeypatch.setattr(cloud_workflow,'lineup_fixture',fetch)
     assert cloud_workflow.wait_for_lineups(123,fixture,auto_retry=True) is True
     assert state['elapsed']==180
@@ -138,7 +138,7 @@ def test_auto_wait_continues_once_lineups_ready(monkeypatch):
 def test_auto_wait_stops_at_kickoff(monkeypatch):
     state,_=retry_clock(monkeypatch)
     fixture={'id':123,'starting_at':'2026-11-14 12:02:00'}
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Not confirmed')))
+    monkeypatch.setattr(cloud_workflow,'available_lineups',Mock(side_effect=LineupsNotReady('Outside final hour')))
     fetch=Mock();monkeypatch.setattr(cloud_workflow,'lineup_fixture',fetch)
     assert cloud_workflow.wait_for_lineups(123,fixture,auto_retry=True) is False
     assert state['elapsed']==120
@@ -147,7 +147,7 @@ def test_auto_wait_stops_at_kickoff(monkeypatch):
 
 def test_auto_wait_rejects_matches_more_than_two_hours_away(monkeypatch):
     state,_=retry_clock(monkeypatch)
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Too early')))
+    monkeypatch.setattr(cloud_workflow,'available_lineups',Mock(side_effect=LineupsNotReady('Too early')))
     assert cloud_workflow.wait_for_lineups(123,{'starting_at':'2026-11-14 15:00:00'},auto_retry=True) is False
     assert state['elapsed']==0
 
@@ -155,7 +155,7 @@ def test_auto_wait_rejects_matches_more_than_two_hours_away(monkeypatch):
 def test_auto_wait_budget_survives_rescheduling(monkeypatch):
     state,_=retry_clock(monkeypatch)
     fixture={'id':123,'starting_at':'2026-11-14 14:00:00'}
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Waiting')))
+    monkeypatch.setattr(cloud_workflow,'available_lineups',Mock(side_effect=LineupsNotReady('Waiting')))
     monkeypatch.setattr(cloud_workflow,'lineup_fixture',Mock(return_value={'id':123,'starting_at':'2026-11-14 18:00:00'}))
     assert cloud_workflow.wait_for_lineups(123,fixture,auto_retry=True) is False
     assert state['elapsed']==7200
@@ -172,7 +172,7 @@ def test_validation_only_disables_auto_wait(monkeypatch):
 def test_auto_wait_does_not_retry_api_failures(monkeypatch):
     from backend.sportmonks import SportmonksError
     retry_clock(monkeypatch)
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',Mock(side_effect=LineupsNotReady('Waiting')))
+    monkeypatch.setattr(cloud_workflow,'available_lineups',Mock(side_effect=LineupsNotReady('Waiting')))
     fetch=Mock(side_effect=SportmonksError('Rate limited'));monkeypatch.setattr(cloud_workflow,'lineup_fixture',fetch)
     with pytest.raises(SportmonksError):
         cloud_workflow.wait_for_lineups(123,{'starting_at':'2026-11-14 13:00:00'},auto_retry=True)
@@ -184,7 +184,7 @@ def test_wait_step_exports_fixture_without_starting_production(tmp_path,monkeypa
     monkeypatch.setattr(cloud_workflow,'ROOT',tmp_path)
     monkeypatch.setenv('CLOUD_VALIDATE_ONLY','false')
     output=tmp_path/'output.txt';monkeypatch.setenv('GITHUB_OUTPUT',str(output))
-    monkeypatch.setattr(cloud_workflow,'confirmed_lineups',lambda *args:{'confirmed':True})
+    monkeypatch.setattr(cloud_workflow,'available_lineups',lambda *args:{'confirmed':True})
     production=Mock();monkeypatch.setattr(cloud_workflow,'run_workflow',production)
     cloud_workflow.run(wait_only=True)
     assert output.read_text()=='ready=true\nfixture_id=19878000\n'
@@ -202,3 +202,44 @@ def test_create_step_reenters_guarded_production(monkeypatch):
 def test_create_step_rejects_missing_or_invalid_fixture(monkeypatch,value):
     monkeypatch.setenv('READY_FIXTURE_ID',value)
     with pytest.raises(CloudStateError):cloud_workflow.create()
+
+
+def test_missing_lineups_do_not_poll_or_sleep(payload,monkeypatch):
+    from datetime import datetime,timedelta,timezone
+    fixture=payload['data'].copy()
+    now=datetime.now(timezone.utc)
+    fixture.update(state_id=1,state={'id':1},starting_at=(now+timedelta(minutes=30)).isoformat(),lineups=[],metadata=[])
+    sleep=Mock(side_effect=AssertionError('Missing lineups must not wait'))
+    monkeypatch.setattr(cloud_workflow.time,'sleep',sleep)
+    assert cloud_workflow.wait_for_lineups(fixture['id'],fixture,auto_retry=True)
+    sleep.assert_not_called()
+
+
+def test_readiness_has_no_youtube_or_generation_side_effects(tmp_path,monkeypatch):
+    cloud_run_mocks(monkeypatch)
+    monkeypatch.setenv('GITHUB_OUTPUT',str(tmp_path/'output'))
+    monkeypatch.setattr(cloud_workflow,'wait_for_lineups',lambda *args,**kwargs:True)
+    for name in ('load_credentials','restore_latest','run_workflow'):
+        monkeypatch.setattr(cloud_workflow,name,Mock(side_effect=AssertionError(name)))
+    cloud_workflow.readiness()
+    assert (tmp_path/'output').read_text()=='ready=true\nfixture_id=19878000\n'
+
+
+def test_create_checks_latest_receipt_before_paid_work(tmp_path,monkeypatch):
+    monkeypatch.setattr(cloud_workflow,'ROOT',tmp_path)
+    monkeypatch.setenv('YOUTUBE_CHANNEL_ID','UCw3H9KY5toxOuN7cSDsIKqA')
+    out=tmp_path/'generated';out.mkdir()
+    (out/'123_prediction_youtube_upload.json').write_text(json.dumps({'state':'uploaded',
+        'channel_id':'UCw3H9KY5toxOuN7cSDsIKqA','video_id':'abcdefghijk'}))
+    production=Mock();monkeypatch.setattr(cloud_workflow,'run_workflow',production)
+    cloud_workflow.create(123)
+    production.assert_not_called()
+
+
+def test_create_validation_only_never_generates(monkeypatch,tmp_path):
+    cloud_run_mocks(monkeypatch)
+    monkeypatch.setattr(cloud_workflow,'ROOT',tmp_path)
+    monkeypatch.setenv('CLOUD_VALIDATE_ONLY','true')
+    production=Mock();monkeypatch.setattr(cloud_workflow,'run_workflow',production)
+    cloud_workflow.create(123)
+    production.assert_not_called()
