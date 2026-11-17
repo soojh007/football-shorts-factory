@@ -93,7 +93,7 @@ def test_unverified_neutrality_no_home_edge(contextual_input):
 def research_payload(claims=None,venue='unverified'):
     return {'status':'completed','output':[
         {'type':'web_search_call','status':'completed','action':{'sources':[{'url':'https://example.org/team-news'}]}},
-        {'type':'message','content':[{'type':'output_text','text':json.dumps({'venue_check':venue,'claims':claims or [],'gaps':[]})}]}]}
+        {'type':'message','content':[{'type':'output_text','text':json.dumps({'venue_check':venue,'claims':claims or [],'fifa_rankings':[],'gaps':[]})}]}]}
 
 
 def claim(**kw):
@@ -283,3 +283,63 @@ def test_no_results_never_fabricates_form(contextual_input):
     histories['home']=[]
     with pytest.raises(PredictionError,match='No verified recent results'):
         contextual_prediction(fixture,histories,lineups,NOW)
+
+
+def ranking_payload(fixture,**updates):
+    payload=research_payload()
+    row={'team_id':fixture['participants'][0]['id'],'rank':6,'points':1800.0,'ranking_date':'2026-11-01',
+         'official':True,'source_url':'https://inside.fifa.com/ranking/BRA',
+         'release_source_url':'https://inside.fifa.com/ranking/men'}
+    row.update(updates)
+    payload['output'][0]['action']['sources'] += [{'url':row['source_url']},{'url':row['release_source_url']}]
+    brief=json.loads(payload['output'][1]['content'][0]['text']);brief['fifa_rankings']=[row]
+    payload['output'][1]['content'][0]['text']=json.dumps(brief)
+    return payload
+
+
+def test_official_fifa_rankings_bound_to_national_team_date_and_sources(contextual_input):
+    fixture,_,_=contextual_input
+    fixture['participants'][0].update(type='national',gender='male')
+    result=validate_research(ranking_payload(fixture),fixture,NOW)
+    assert result['fifa_rankings'][0]['rank']==6
+    assert result['fifa_rankings'][0]['ranking_date']=='2026-11-01'
+
+
+@pytest.mark.parametrize('change',[{'official':False},{'ranking_date':'2026-11-15'},
+    {'ranking_date':'2025-01-01'},{'source_url':'https://fifa.com.example.org/ranking'}, {'team_id':9999}])
+def test_unverified_fifa_rankings_excluded_without_blocking(contextual_input,change):
+    fixture,_,_=contextual_input
+    fixture['participants'][0].update(type='national',gender='male')
+    assert validate_research(ranking_payload(fixture,**change),fixture,NOW)['fifa_rankings']==[]
+
+
+def test_clubs_do_not_inherit_national_fifa_rankings(contextual_input):
+    fixture,_,_=contextual_input
+    assert validate_research(ranking_payload(fixture),fixture,NOW)['fifa_rankings']==[]
+
+
+def test_fifa_points_adjustment_requires_matching_official_release(contextual_input):
+    fixture,histories,lineups=contextual_input
+    base=contextual_prediction(fixture,histories,lineups,NOW)
+    ranks=[{'team_id':10,'rank':6,'points':1800,'ranking_date':'2026-11-01'},
+           {'team_id':20,'rank':149,'points':1000,'ranking_date':'2026-11-01'}]
+    result=contextual_prediction(fixture,histories,lineups,NOW,research={'fifa_rankings':ranks})
+    assert result['forecast']['model_goal_rates']['home']>base['forecast']['model_goal_rates']['home']
+    assert result['forecast']['model_goal_rates']['away']<base['forecast']['model_goal_rates']['away']
+    ranks[0]['ranking_date']='2026-10-01'
+    result=contextual_prediction(fixture,histories,lineups,NOW,research={'fifa_rankings':ranks})
+    assert result['forecast']['assumptions']['fifa_points_factor']==1
+
+
+def test_research_query_does_not_search_raw_fixture_json(payload):
+    from backend.research import ResearchClient
+    from datetime import timedelta
+    fixture=payload['data'];fixture['starting_at']=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()
+    session=Mock();session.post.return_value.status_code=200
+    session.post.return_value.json.return_value=research_payload()
+    client=ResearchClient(api_key='synthetic-key',session=session)
+    client.brief(fixture)
+    body=session.post.call_args.kwargs['json']
+    assert len(body['input'])<300
+    assert 'fixture_id' not in body['input']
+    assert 'untrusted data' in body['instructions']

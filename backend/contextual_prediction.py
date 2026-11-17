@@ -121,14 +121,23 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     h,a=profiles['home'],profiles['away']
     home_rate=(h['rates']['goals_for']+a['rates']['goals_against'])/2*h['rating_factor']*factors[venues['home']['role']]
     away_rate=(a['rates']['goals_for']+h['rates']['goals_against'])/2*a['rating_factor']*factors[venues['away']['role']]
+    rankings={row['team_id']:row for row in (research or {}).get('fifa_rankings',[])}
+    rank_by_side={side:rankings[team['id']] for side,team in result['teams'].items() if team['id'] in rankings}
+    rank_factor=1.0
+    if len(rank_by_side)==2:
+        hr,ar=rank_by_side['home'],rank_by_side['away']
+        if hr['ranking_date']==ar['ranking_date'] and hr.get('official')==ar.get('official') and hr.get('points') is not None and ar.get('points') is not None:
+            # A modest experimental strength adjustment; ordinal gaps are not rating differences.
+            rank_factor=math.exp(max(-.35,min(.35,(hr['points']-ar['points'])/1200)))
+            home_rate*=rank_factor;away_rate/=rank_factor
     probabilities,outcome,pick,score_mass=distribution(home_rate,away_rate)
     result['lineups']=deepcopy(lineups)
     result['context']={'venue':venues['home'],'venue_by_team':venues,'lineup_profiles':profiles,
-                       'web_research':research or {'performed':False,'claims':[],'sources':[]}}
+                       'fifa_rankings':rank_by_side,'latest_matches':(research or {}).get('provider_latest',{}),'web_research':research or {'performed':False,'claims':[],'sources':[]}}
     result['forecast']={'model':'lineup-venue-poisson-v3','calibrated':False,'probabilities':probabilities,
         'outcome':outcome,'score_pick':pick,'score_pick_probability':score_mass,
         'model_goal_rates':{'home':home_rate,'away':away_rate},
-        'assumptions':{'prior_matches':3,'prior_goals_per_game':1.4,'lineup_weight':'0.35 + 0.65 * overlap/11',
+        'assumptions':{'fifa_points_factor':rank_factor,'fifa_points_formula':'exp(clip((home_points-away_points)/1200,-0.35,0.35)); inverse for away; matching release or live snapshot only','prior_matches':3,'prior_goals_per_game':1.4,'lineup_weight':'0.35 + 0.65 * overlap/11',
             'rating_adjustment':'1 + 0.08 * current-XI mean minus historical-XI mean; clipped 0.92–1.08; >=6 rated starters required',
             'venue_factors':factors,'applied_venue_factors':{side:factors[venues[side]['role']] for side in venues},'coefficients_hand_set_not_fitted':True},
         'limitations':['Experimental coefficients, not backtested or calibrated.','Lineup overlap is not a complete player-strength model.',
@@ -142,6 +151,16 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     preferred=home if outcome=='home' else away if outcome=='away' else 'a draw'
     featured={side:sorted(lineups[side]['starters'],key=lambda p:profiles[side]['player_ratings'].get(str(p['player_id']),-1),reverse=True)[:2] for side in ('home','away')}
     result['featured_players']=featured
+    result['archive_players']={}
+    for side in ('home','away'):
+        completed=sorted((row for row in histories[side] if kickoff_utc(row)<as_of),key=kickoff_utc,reverse=True)
+        pool=[];seen=set()
+        for row in completed[:3]:
+            for player in row.get('lineups') or []:
+                pid=player.get('player_id');name=player.get('player_name')
+                if player.get('team_id')==result['teams'][side]['id'] and player.get('type_id')==11 and type(pid) is int and isinstance(name,str) and name.strip() and pid not in seen:
+                    seen.add(pid);pool.append({'player_id':pid,'name':name.strip(),'archive_only':True})
+        result['archive_players'][side]=pool[:6]
     # Offline assembly is a plain-language preview. Production uses EditorialClient.
     home_player=featured['home'][0]['name'] if featured['home'] else None;away_player=featured['away'][0]['name'] if featured['away'] else None
     sections=[{'kind':'hook','text':f"I'm backing {preferred} here. This is the sort of matchup where the starting eleven makes the difference for me."},

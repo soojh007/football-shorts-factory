@@ -144,3 +144,30 @@ def test_review_service_auth_failure_is_not_hidden_by_backup(editorial_input,dra
     with pytest.raises(EditorialError,match='HTTP 401'):
         EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
     assert session.post.call_count==2
+
+
+def test_latest_defeat_cannot_be_hidden_behind_aggregate(editorial_input,draft):
+    editorial_input['form']['home']['matches']=[{'opponent':'Japan','result':'L','goals_for':2,'goals_against':3,'kickoff':'2026-11-14T10:15:00Z'}]
+    packet=evidence_packet(editorial_input)
+    assert packet['evidence']['home_latest']['result']=='L'
+    with pytest.raises(EditorialError,match='latest completed result'):
+        validate_draft(draft,editorial_input,packet)
+    from backend.editorial import grounded_backup
+    result=grounded_backup(editorial_input,packet,[])
+    assert 'lost to Japan' in result['script']
+    assert result['sections'][-1]['kind']=='pick'
+
+
+def test_latest_cross_competition_result_keeps_scope(editorial_input):
+    editorial_input['context']['latest_matches']={'home':{'opponent':'Japan','result':'L','goals_for':2,'goals_against':3,'competition':'World Cup'}}
+    packet=evidence_packet(editorial_input)
+    assert packet['evidence']['home_latest']['competition']=='World Cup'
+    assert packet['evidence']['home_form']['sample_size']==5
+
+
+def test_latest_opponent_reference_must_state_the_result(editorial_input,draft):
+    editorial_input['form']['home']['matches']=[{'opponent':'Japan','result':'L','goals_for':2,'goals_against':3}]
+    draft['sections'][-1]['text']+=' Japan were the opposition in their last league game.'
+    draft['sections'][-1]['evidence_ids'].append('home_latest')
+    with pytest.raises(EditorialError,match='latest completed result'):
+        validate_draft(draft,editorial_input,evidence_packet(editorial_input))
