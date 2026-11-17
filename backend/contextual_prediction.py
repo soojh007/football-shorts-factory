@@ -109,7 +109,7 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     if not lineups.get('confirmed'):
         for side in ('home','away'):lineups[side]['starters']=[]
     league_id=fixture.get('league_id') if league_id is None else league_id
-    result=make_prediction(fixture,histories,as_of=as_of,league_id=league_id)
+    result=make_prediction(fixture,histories,as_of=as_of,league_id=league_id,min_matches=1)
     profiles={};venues={}
     for side in ('home','away'):
         team=result['teams'][side]
@@ -134,6 +134,8 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
         'limitations':['Experimental coefficients, not backtested or calibrated.','Lineup overlap is not a complete player-strength model.',
             'Player ratings are missing for some players and depend on provider coverage.','Opponent strength, travel and weather are not quantitatively modeled.',
             'Internet reports are sourced context and cross-checks, not arbitrary numeric boosts.']}
+    if any(form['sample_size']<3 for form in result['form'].values()):
+        result['forecast']['limitations'].append('Small available result sample; prior shrinkage retained and actual sample sizes recorded.')
     if venues['home']['role']=='unknown':
         result['forecast']['limitations'].append('Venue context unavailable or conflicting; no venue adjustment applied.')
     home,away=result['teams']['home']['name'],result['teams']['away']['name']

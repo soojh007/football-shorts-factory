@@ -36,7 +36,7 @@ def teams_for_preview(fixture, as_of, league_id=8):
     return teams
 
 
-def recent_form(fixtures, team_id, as_of, *, league_id=8, sample_size=5):
+def recent_form(fixtures, team_id, as_of, *, league_id=8, sample_size=5, min_matches=3):
     eligible, excluded = [], []
     seen = set()
     for fixture in fixtures:
@@ -64,8 +64,8 @@ def recent_form(fixtures, team_id, as_of, *, league_id=8, sample_size=5):
                          'result': 'W' if goals_for > goals_against else 'D' if goals_for == goals_against else 'L'})
     eligible.sort(key=lambda match: match['kickoff'], reverse=True)
     sample = eligible[:sample_size]
-    if len(sample) < 3:
-        raise PredictionError('At least three valid recent results in the selected competition per team are required; no prediction fabricated.')
+    if len(sample) < min_matches:
+        raise PredictionError('At least three valid recent results in the selected competition per team are required; no prediction fabricated.' if min_matches==3 else 'No verified recent results are available for one of these teams; no prediction fabricated.')
     return {'team_id': team_id, 'sample_size': len(sample), 'matches': sample,
             'sequence': ''.join(match['result'] for match in sample),
             'wins': sum(match['result'] == 'W' for match in sample),
@@ -114,12 +114,12 @@ def poisson_forecast(home_form, away_form, *, home_multiplier=1.0):
                 'A selected score is speculative, not a guaranteed result.']}
 
 
-def make_prediction(fixture, histories, *, as_of=None, league_id=8):
+def make_prediction(fixture, histories, *, as_of=None, league_id=8, min_matches=3):
     as_of = as_of or datetime.now(timezone.utc)
     if as_of.tzinfo is None:
         raise PredictionError('Prediction cutoff must include a timezone.')
     teams = teams_for_preview(fixture, as_of, league_id)
-    forms = {side: recent_form(histories[side], team['id'], as_of, league_id=league_id)
+    forms = {side: recent_form(histories[side], team['id'], as_of, league_id=league_id,min_matches=min_matches)
              for side, team in teams.items()}
     forecast = poisson_forecast(forms['home'], forms['away'], home_multiplier=1.0)
     h, a = teams['home']['name'], teams['away']['name']
