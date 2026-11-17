@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "model": "fifa-strength-poisson-v1",
+  "features": [
+    "intercept",
+    "fifa_points_gap_per_600",
+    "home_soil",
+    "friendly",
+    "log_recent_goal_rate"
+  ],
+  "coefficients": [
+    -0.02759797750443329,
+    1.1544981323140022,
+    0.39482122033514877,
+    -0.015810241943128443,
+    0.5458492169159329
+  ],
+  "train_start": "2018-08-18",
+  "train_end": "2022-12-30",
+  "holdout_start": "2023-01-01",
+  "evaluated_through": "2024-09-19",
+  "training_fixtures": 3815,
+  "excluded_missing_ranks": 709,
+  "points_gap_training_range": [
+    -1.6124166666666668,
+    1.5283333333333333
+  ],
+  "validation_passed": true,
+  "validation": {
+    "all": {
+      "recent_form": {
+        "fixtures": 1468,
+        "goal_nll_per_fixture": 3.0556032050305753,
+        "goal_difference_mae": 1.4971495069417415,
+        "mean_stronger_team_predicted_margin": 0.18697044894251963,
+        "mean_stronger_team_actual_margin": 1.0224795640326976
+      },
+      "capped_fifa": {
+        "fixtures": 1468,
+        "goal_nll_per_fixture": 2.909693877668638,
+        "goal_difference_mae": 1.3670110486792024,
+        "mean_stronger_team_predicted_margin": 0.6499513377777152,
+        "mean_stronger_team_actual_margin": 1.0224795640326976
+      },
+      "strength_model": {
+        "fixtures": 1468,
+        "goal_nll_per_fixture": 2.825231965484178,
+        "goal_difference_mae": 1.3451044688856453,
+        "mean_stronger_team_predicted_margin": 1.2213338013006998,
+        "mean_stronger_team_actual_margin": 1.0224795640326976
+      }
+    },
+    "friendlies": {
+      "recent_form": {
+        "fixtures": 378,
+        "goal_nll_per_fixture": 3.065551446029241,
+        "goal_difference_mae": 1.5166965860418238,
+        "mean_stronger_team_predicted_margin": 0.12462049634668686,
+        "mean_stronger_team_actual_margin": 0.9576719576719577
+      },
+      "capped_fifa": {
+        "fixtures": 378,
+        "goal_nll_per_fixture": 2.9157805373632573,
+        "goal_difference_mae": 1.3566228229174606,
+        "mean_stronger_team_predicted_margin": 0.5499542502935327,
+        "mean_stronger_team_actual_margin": 0.9576719576719577
+      },
+      "strength_model": {
+        "fixtures": 378,
+        "goal_nll_per_fixture": 2.836373074704733,
+        "goal_difference_mae": 1.322409732147906,
+        "mean_stronger_team_predicted_margin": 1.1793802894096155,
+        "mean_stronger_team_actual_margin": 0.9576719576719577
+      }
+    },
+    "large_gap_500_plus": {
+      "recent_form": {
+        "fixtures": 91,
+        "goal_nll_per_fixture": 4.0045029930514,
+        "goal_difference_mae": 2.7440803244374683,
+        "mean_stronger_team_predicted_margin": 0.6258307169021455,
+        "mean_stronger_team_actual_margin": 3.230769230769231
+      },
+      "capped_fifa": {
+        "fixtures": 91,
+        "goal_nll_per_fixture": 3.27180084421317,
+        "goal_difference_mae": 2.1841838505079267,
+        "mean_stronger_team_predicted_margin": 1.6720116316523375,
+        "mean_stronger_team_actual_margin": 3.230769230769231
+      },
+      "strength_model": {
+        "fixtures": 91,
+        "goal_nll_per_fixture": 2.8366457205509237,
+        "goal_difference_mae": 1.880638525791497,
+        "mean_stronger_team_predicted_margin": 4.24991958970811,
+        "mean_stronger_team_actual_margin": 3.230769230769231
+      }
+    },
+    "close_gap_under_100": {
+      "recent_form": {
+        "fixtures": 436,
+        "goal_nll_per_fixture": 2.9369046294956545,
+        "goal_difference_mae": 1.3273946046308431,
+        "mean_stronger_team_predicted_margin": 0.02246887287024901,
+        "mean_stronger_team_actual_margin": 0.38073394495412843
+      },
+      "capped_fifa": {
+        "fixtures": 436,
+        "goal_nll_per_fixture": 2.919808834897666,
+        "goal_difference_mae": 1.3182241749511308,
+        "mean_stronger_team_predicted_margin": 0.1278269655991844,
+        "mean_stronger_team_actual_margin": 0.38073394495412843
+      },
+      "strength_model": {
+        "fixtures": 436,
+        "goal_nll_per_fixture": 2.8982149893950777,
+        "goal_difference_mae": 1.315951439098658,
+        "mean_stronger_team_predicted_margin": 0.2716914941157613,
+        "mean_stronger_team_actual_margin": 0.38073394495412843
+      }
+    }
+  },
+  "source_sha256": {
+    "martj42_results.csv": "09aac809e317f3004c69720a38addb656c49ebb19f1937deab96f96e3362257a",
+    "Dato-Futbol_ranking_fifa_historical.csv": "d4f4d8d3db8e7560823b31b8db7848e1b85fcd1e1353de1d7e1fbedc6d47226e"
+  },
+  "sources": [
+    "https://github.com/martj42/international_results",
+    "https://github.com/Dato-Futbol/fifa-ranking"
+  ],
+  "limitations": [
+    "Retrospective chronological holdout, not prospective validation.",
+    "FIFA points, not ordinal rank gaps, measure relative strength.",
+    "Historical ratings are the last release strictly before each match; maximum age 90 days.",
+    "Training and holdout end before 2026; Singapore\u2013Brazil 2026 is not included.",
+    "Runtime lineup-rating factors are heuristic overlays, not fitted individual-player effects."
+  ]
+}

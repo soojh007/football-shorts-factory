@@ -321,14 +321,15 @@ def test_clubs_do_not_inherit_national_fifa_rankings(contextual_input):
 def test_fifa_points_adjustment_requires_matching_official_release(contextual_input):
     fixture,histories,lineups=contextual_input
     base=contextual_prediction(fixture,histories,lineups,NOW)
-    ranks=[{'team_id':10,'rank':6,'points':1800,'ranking_date':'2026-11-01'},
-           {'team_id':20,'rank':149,'points':1000,'ranking_date':'2026-11-01'}]
+    for participant in fixture['participants']:participant.update(type='national',gender='male')
+    ranks=[{'team_id':10,'rank':6,'points':1800,'official':True,'ranking_date':'2026-11-01'},
+           {'team_id':20,'rank':149,'points':1000,'official':True,'ranking_date':'2026-11-01'}]
     result=contextual_prediction(fixture,histories,lineups,NOW,research={'fifa_rankings':ranks})
     assert result['forecast']['model_goal_rates']['home']>base['forecast']['model_goal_rates']['home']
     assert result['forecast']['model_goal_rates']['away']<base['forecast']['model_goal_rates']['away']
     ranks[0]['ranking_date']='2026-10-01'
     result=contextual_prediction(fixture,histories,lineups,NOW,research={'fifa_rankings':ranks})
-    assert result['forecast']['assumptions']['fifa_points_factor']==1
+    assert result['forecast']['assumptions']['strength_model']['applied'] is False
 
 
 def test_research_query_does_not_search_raw_fixture_json(payload):
