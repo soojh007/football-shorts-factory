@@ -38,10 +38,6 @@ def photo(image,draw,asset,box,phase,time_seconds=0):
         image.paste(fitted,(x0,y0),mask)
         draw.rounded_rectangle((x0,y1-105,x1,y1),radius=18,fill=BG)
         text_block(draw,asset['name'],(x0+18,y1-94,x1-18,y1-12),34,WHITE,max_lines=2)
-        if asset.get('visual_type')=='action':
-            draw.rounded_rectangle((x0+12,y0+12,x1-12,y0+62),radius=12,fill=BG)
-            label='ARCHIVE CLIP' if asset.get('kind')=='video' else 'ACTION PHOTO · ARCHIVE'
-            text_block(draw,label,(x0+22,y0+16,x1-22,y0+58),24,LIME,max_lines=1)
 
 
 def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):

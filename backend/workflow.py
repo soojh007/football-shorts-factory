@@ -76,7 +76,7 @@ def prediction_upload_body(prediction):
     description=(f"{competition} prediction: {h} {score['home']}–{score['away']} {a}.\n" +
         ('Both official starting elevens were confirmed when this video was created.\n\n' if prediction.get('lineups',{}).get('confirmed') else 'Confirmed starting elevens were unavailable; this prediction uses other available information.\n\n') +
         f"{prediction['script']}\n\n{DISCLOSURE}\n"
-        'Experimental lineup- and venue-conditioned forecast, not calibrated. Player/venue coefficients are heuristic, not validated accuracy claims.\n'
+        'Outcome probabilities are not calibrated prospectively. FIFA-points strength coefficients are fitted and chronologically tested; lineup overlays and missing-data fallbacks remain experimental.\n'
         'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #Prediction')
     research=(prediction.get('context') or {}).get('web_research') or {}
     rank_urls=[row[key] for row in research.get('fifa_rankings',[]) for key in ('source_url','release_source_url')]
