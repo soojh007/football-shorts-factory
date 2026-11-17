@@ -165,7 +165,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     source['latest_matches']=latest
     from backend.fifa_rankings import fetch_rankings
     report('Reading available FIFA rankings from the official table')
-    fifa=fetch_rankings(source['fixture'],now)
+    fifa=fetch_rankings(source['fixture'])
     report('Researching official announcements and credible reports on the internet')
     researcher=ResearchClient()
     with researcher.session:
@@ -182,7 +182,9 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     if fifa:research['fifa_rankings']=fifa
     report(f"Verified FIFA rankings available: {len(research.get('fifa_rankings',[]))}")
     research['provider_latest']=latest
-    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id,research=research)
+    # Timestamp the forecast after source retrieval, and recheck that kickoff is still in the future.
+    forecast_at=datetime.now(timezone.utc)
+    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,forecast_at,league_id=league_id,research=research)
     save_json(out/f'{fixture_id}_web_research.json',research)
     report('Writing a personal football take with the editorial agent')
     editor=EditorialClient()

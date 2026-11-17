@@ -66,7 +66,7 @@ def fetch_rankings(fixture,checked_at=None,*,report=None):
                         href:cells[1]?.querySelector('a')?.getAttribute('href') || '',
                         points:cells[5]?.querySelector('h4')?.textContent || cells[5]?.innerText || ''};
                 })''')
-                return parse_rows(rows,participants,checked_at)
+                return parse_rows(rows,participants,datetime.now(timezone.utc))
             finally:browser.close()
     except Exception as exc:
         report(f'FIFA optional source: {type(exc).__name__}: {str(exc).splitlines()[0][:160]}')
