@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.errors import HttpError
 
 from backend.main import save_json
 from backend.speech import DISCLOSURE
@@ -65,6 +66,41 @@ def existing_upload(receipt_path, expected):
         raise YouTubeError('Unable to read the upload record; check YouTube Studio before retrying.') from None
 
 
+
+UPLOAD_REASONS = {
+    'uploadLimitExceeded': 'YouTube channel upload limit reached. Wait for the limit to reset; check channel verification and feature eligibility in YouTube Studio.',
+    'quotaExceeded': 'YouTube API project quota exhausted. Check the project quota in Google Cloud Console.',
+    'dailyLimitExceeded': 'YouTube API project daily limit reached. Check the project quota in Google Cloud Console.',
+    'forbidden': 'YouTube denied the upload. Check channel permissions and restrictions.',
+    'insufficientPermissions': 'YouTube upload permission is missing. Reconnect the intended channel.',
+    'youtubeSignupRequired': 'The authorized Google account needs an active YouTube channel.',
+    'invalidVideoMetadata': 'YouTube rejected the video metadata.',
+    'invalidTitle': 'YouTube rejected the video title.',
+    'invalidDescription': 'YouTube rejected the video description.',
+}
+
+
+def upload_failure_details(exc):
+    """Expose only allowlisted codes, never response messages, URLs or headers."""
+    details = {'category': 'transport_or_local_failure'}
+    explanation = 'The upload connection or local operation failed.'
+    if isinstance(exc, HttpError):
+        status = getattr(exc.resp, 'status', None)
+        if type(status) is int and 100 <= status <= 599:
+            details['http_status'] = status
+        details['category'] = 'youtube_api_rejection'
+        explanation = 'YouTube rejected the upload request.'
+        try:
+            errors = json.loads(exc.content).get('error', {}).get('errors', [])
+            reason = next((x.get('reason') for x in errors
+                           if isinstance(x, dict) and x.get('reason') in UPLOAD_REASONS), None)
+        except (ValueError, TypeError, AttributeError):
+            reason = None
+        if reason:
+            details['reason'] = reason
+            explanation = UPLOAD_REASONS[reason]
+    return details, explanation
+
 def upload_video(service, video_path, body, channel_id, video_hash, receipt_path):
     if not CHANNEL_PATTERN.fullmatch(channel_id):
         raise YouTubeError('Set YOUTUBE_CHANNEL_ID to the intended UC... channel ID.')
@@ -87,12 +123,15 @@ def upload_video(service, video_path, body, channel_id, video_hash, receipt_path
         json.dump(initial, handle, indent=2)
         handle.flush()
         os.fsync(handle.fileno())
+    stage = 'preparing_request'
     try:
         media = MediaFileUpload(str(video_path), mimetype='video/mp4', chunksize=8 * 1024 * 1024, resumable=True)
         request = service.videos().insert(part='snippet,status', body=body, media_body=media, notifySubscribers=False)
         response = None
         while response is None:
+            stage = 'sending_upload'
             _, response = request.next_chunk(num_retries=3)
+        stage = 'saving_response'
         video_id = response.get('id')
         if not isinstance(video_id, str) or not VIDEO_PATTERN.fullmatch(video_id):
             raise YouTubeError('YouTube returned no valid video ID. Check YouTube Studio before retrying.')
@@ -104,7 +143,16 @@ def upload_video(service, video_path, body, channel_id, video_hash, receipt_path
                    'processing_verified': False}
         save_json(receipt_path, receipt)
         return receipt, False
-    except Exception:
+    except Exception as exc:
+        details, explanation = upload_failure_details(exc)
+        details['stage'] = stage
+        try:
+            save_json(receipt_path, {**initial, 'failure': details})
+        except Exception:
+            pass  # Keep the original reservation if diagnostic persistence fails.
+        codes = ', '.join(str(details[k]) for k in ('http_status', 'reason') if k in details)
+        if codes:
+            explanation += f' ({codes})'
         # The remote upload may have completed even if the final response was lost.
         # Keep the reservation and never silently start another videos.insert call.
-        raise YouTubeError('Upload failed or completion is uncertain. The local record was retained; check YouTube Studio before retrying. No new upload was started automatically.') from None
+        raise YouTubeError(explanation + ' Upload failed or completion is uncertain. The local record was retained; check YouTube Studio before retrying. No new upload was started automatically.') from None

@@ -134,3 +134,44 @@ def test_missing_channel(service):
     service.channels.return_value.list.return_value.execute.return_value = {'items': []}
     with pytest.raises(YouTubeError):
         current_channel(service)
+
+
+@pytest.mark.parametrize('reason,explanation', [
+    ('uploadLimitExceeded', 'channel upload limit'),
+    ('quotaExceeded', 'project quota'),
+    ('insufficientPermissions', 'permission is missing'),
+])
+def test_upload_api_failure_is_actionable_and_safe(tmp_path, service, body, reason, explanation):
+    from googleapiclient.errors import HttpError
+    import httplib2
+    video = tmp_path/'video.mp4'
+    video.write_bytes(b'fake-video')
+    error = HttpError(httplib2.Response({'status': '403'}), json.dumps({
+        'error': {'message': 'SECRET URL AND TOKEN', 'errors': [{'reason': reason}]}}).encode(),
+        uri='https://secret-upload-session')
+    service.videos.return_value.insert.return_value.next_chunk.side_effect = error
+    path = tmp_path/'receipt.json'
+    with pytest.raises(YouTubeError) as caught:
+        upload_video(service, video, body, CHANNEL, 'hash', path)
+    assert explanation in str(caught.value)
+    assert reason in str(caught.value)
+    assert 'SECRET' not in str(caught.value)
+    assert 'secret-upload-session' not in str(caught.value)
+    receipt = json.loads(path.read_text())
+    assert receipt['state'] == 'uploading'
+    assert receipt['failure'] == {'category': 'youtube_api_rejection', 'http_status': 403,
+                                  'reason': reason, 'stage': 'sending_upload'}
+    with pytest.raises(YouTubeError, match='uncertain'):
+        upload_video(service, video, body, CHANNEL, 'hash', path)
+    assert service.videos.return_value.insert.call_count == 1
+
+
+def test_unknown_api_reason_does_not_leak_response():
+    from backend.youtube import upload_failure_details
+    from googleapiclient.errors import HttpError
+    import httplib2
+    error = HttpError(httplib2.Response({'status': '500'}),
+        b'{"error":{"errors":[{"reason":"secret-value"}],"message":"secret"}}')
+    details, message = upload_failure_details(error)
+    assert 'secret' not in json.dumps(details) + message
+    assert details['http_status'] == 500
