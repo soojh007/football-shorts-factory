@@ -20,7 +20,7 @@ from backend.main import ROOT, positive_int, save_json
 from backend.predict import collect, render_prediction,prediction_duration
 from backend.prediction import PredictionError, make_prediction, prediction_content_hash, teams_for_preview
 from backend.prediction_video import STYLE_VERSION
-from backend.prematch import PrematchClient, kickoff_utc
+from backend.prematch import PrematchClient, kickoff_utc, PrematchTemporaryError, PrematchDataUnavailableError
 from backend.speech import DISCLOSURE, sha256, wav_metadata
 from backend.video import probe_video, require_tools
 from backend.youtube import CHANNEL_PATTERN, current_channel, existing_upload, upload_video
@@ -112,17 +112,34 @@ def reusable_video(prediction, out):
 
 
 
-def enrich_history(source,now):
+def enrich_history(source,now,*,report=None):
     base=make_prediction(source['fixture'],source['histories'],as_of=now,league_id=fixture_league_id(source['fixture']),min_matches=1)
     needed={m['fixture_id'] for form in base['form'].values() for m in form['matches']}
     enriched={}
+    report=report or (lambda message:None)
+    omitted=[];reason=None
     client=PrematchClient()
     with client.session:
-        for match_id in needed:
-            data=client.fixture_request(str(match_id),includes='participants;scores;state;lineups.details.type;venue;metadata.type').get('data')
+        for match_id in sorted(needed):
+            try:
+                data=client.fixture_request(str(match_id),includes='participants;scores;state;lineups.details.type;venue;metadata.type').get('data')
+            except PrematchTemporaryError as exc:
+                reason=exc.code
+                omitted=sorted(needed-set(enriched))
+                report(f'Optional historical detail service unavailable after bounded retries ({reason}); retaining verified results for {len(omitted)} matches.')
+                break
+            except PrematchDataUnavailableError:
+                omitted.append(match_id)
+                report(f'Optional historical details unavailable for fixture {match_id}; retaining its verified result.')
+                continue
+            if data is None:
+                omitted.append(match_id)
+                continue
             if not isinstance(data,dict) or data.get('id')!=match_id:
-                raise PredictionError('Historical lineup facts are missing or mismatched.')
+                raise PredictionError('Historical fixture identity is invalid or mismatched.')
             enriched[match_id]=data
+    source['historical_detail_availability']={'enriched_fixture_ids':sorted(enriched),
+        'omitted_fixture_ids':sorted(set(omitted)),'temporary_failure_code':reason}
     source['histories']={side:[enriched.get(match['id'],match) for match in rows] for side,rows in source['histories'].items()}
     return source
 
@@ -153,7 +170,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         report('Retrieving recent results in the selected competition')
         source=collect(client,fixture_id,league_id,now,fixture=fixture)
         report('Checking historical lineups, player ratings and venue context')
-        source=enrich_history(source,now)
+        source=enrich_history(source,now,report=report)
     # Validate data sufficiency before paying for web research.
     contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id)
     from backend.freshness import latest_completed
@@ -161,7 +178,12 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     report('Checking latest completed matches across accessible competitions')
     client=PrematchClient()
     with client.session:
-        latest=latest_completed(client,teams_for_preview(source['fixture'],now,league_id),now)
+        try:
+            latest=latest_completed(client,teams_for_preview(source['fixture'],now,league_id),now)
+        except (PrematchTemporaryError,PrematchDataUnavailableError):
+            latest={}
+            source['latest_match_lookup']='temporarily_unavailable'
+            report('Optional cross-competition lookup unavailable; using the verified competition-scoped results.')
     source['latest_matches']=latest
     from backend.fifa_rankings import fetch_rankings
     report('Reading available FIFA rankings from the official table')
