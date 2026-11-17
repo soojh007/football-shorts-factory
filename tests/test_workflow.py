@@ -114,7 +114,7 @@ def setup_workflow(monkeypatch,ready):
     clock=Mock()
     clock.now.return_value=NOW
     monkeypatch.setattr('backend.workflow.datetime',clock)
-    monkeypatch.setattr('backend.workflow.enrich_history',lambda source,now:source)
+    monkeypatch.setattr('backend.workflow.enrich_history',lambda source,now,**kwargs:source)
     def contextual(fixture,histories,lineups,now,league_id,research=None):
         return add_lineup_sections(make_prediction(fixture,histories,as_of=now,league_id=league_id),lineups)
     monkeypatch.setattr('backend.workflow.contextual_prediction',contextual)
@@ -277,3 +277,42 @@ def test_sharealike_images_require_video_licence_and_attribution():
     assert 'This video adaptation is licensed under CC BY-SA 4.0' in body['snippet']['description']
     assert 'Photographer' in body['snippet']['description'] and 'Changes:' in body['snippet']['description']
     assert body['status']['privacyStatus']=='private'
+
+
+def test_optional_history_transport_outage_keeps_results_and_stops_request_storm(ready,monkeypatch):
+    from backend.workflow import enrich_history
+    from backend.prematch import PrematchTemporaryError
+    source=deepcopy(ready[1]);before=deepcopy(source['histories'])
+    client=MagicMock();client.fixture_request.side_effect=PrematchTemporaryError('Source temporarily unavailable',code='connection_failure')
+    monkeypatch.setattr('backend.workflow.PrematchClient',lambda:client)
+    result=enrich_history(source,NOW)
+    assert result['histories']==before
+    assert result['historical_detail_availability']['temporary_failure_code']=='connection_failure'
+    assert len(result['historical_detail_availability']['omitted_fixture_ids'])==5
+    assert client.fixture_request.call_count==1
+
+
+def test_missing_historical_detail_keeps_that_result_and_enriches_others(ready,monkeypatch):
+    from backend.workflow import enrich_history
+    from backend.prematch import PrematchDataUnavailableError
+    source=deepcopy(ready[1]);by_id={row['id']:row for row in source['histories']['home']}
+    def fetch(match_id,**kwargs):
+        if int(match_id)==100:raise PrematchDataUnavailableError('Optional historical record unavailable')
+        return {'data':{**by_id[int(match_id)],'lineups':[]}}
+    client=MagicMock();client.fixture_request.side_effect=fetch
+    monkeypatch.setattr('backend.workflow.PrematchClient',lambda:client)
+    result=enrich_history(source,NOW)
+    assert result['historical_detail_availability']['omitted_fixture_ids']==[100]
+    assert result['historical_detail_availability']['enriched_fixture_ids']==[101,102,103,104]
+    assert len(result['histories']['home'])==5
+
+
+def test_history_authentication_and_identity_errors_are_not_silently_skipped(ready,monkeypatch):
+    from backend.workflow import enrich_history
+    from backend.sportmonks import SportmonksError
+    from backend.prediction import PredictionError
+    client=MagicMock();monkeypatch.setattr('backend.workflow.PrematchClient',lambda:client)
+    client.fixture_request.side_effect=SportmonksError('Authentication denied')
+    with pytest.raises(SportmonksError):enrich_history(deepcopy(ready[1]),NOW)
+    client.fixture_request.side_effect=None;client.fixture_request.return_value={'data':{'id':999999}}
+    with pytest.raises(PredictionError,match='identity'):enrich_history(deepcopy(ready[1]),NOW)

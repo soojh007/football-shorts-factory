@@ -1,7 +1,37 @@
 """Pre-match evidence collection without paid prediction add-ons."""
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+import time
+
+import requests
 
 from backend.sportmonks import SportmonksClient, SportmonksError
+
+
+class PrematchTemporaryError(SportmonksError):
+    """A read-only source request exhausted its bounded transient retries."""
+    def __init__(self,message,*,code='temporary_source_failure'):
+        super().__init__(message)
+        self.code=code
+
+
+class PrematchDataUnavailableError(SportmonksError):
+    """The requested relationship/record is unavailable, not a failed login."""
+    code='optional_record_unavailable'
+
+
+def retry_delay(response,attempt):
+    value=response.headers.get('Retry-After')
+    if not isinstance(value,str):return attempt+1
+    try:seconds=float(value)
+    except ValueError:
+        try:
+            stamp=parsedate_to_datetime(value)
+            if stamp.tzinfo is None:stamp=stamp.replace(tzinfo=timezone.utc)
+            seconds=(stamp-datetime.now(timezone.utc)).total_seconds()
+        except (ValueError,TypeError,OverflowError):return None
+    if not 0<=seconds<=5:return None
+    return max(attempt+1,seconds)
 
 
 class PrematchClient(SportmonksClient):
@@ -14,24 +44,42 @@ class PrematchClient(SportmonksClient):
         base=self.BASE_URL.rsplit('/',1)[0]+'/'+resource
         if suffix.startswith('between/') and league_id is not None:
             params['filters'] = f'fixtureLeagues:{league_id}'
-        try:
-            response = self.session.get(f'{base}/{suffix}'.rstrip('/'),
-                headers={'Authorization': self._token, 'Accept': 'application/json'},
-                params=params, timeout=self.timeout)
-        except Exception:
-            raise SportmonksError('Unable to retrieve pre-match data from Sportmonks.') from None
-        if response.status_code in (401, 403):
-            raise SportmonksError('Sportmonks access denied for pre-match data; check subscription coverage.')
-        if response.status_code == 429:
-            raise SportmonksError('Sportmonks rate limit reached; wait before retrying.')
-        if response.status_code != 200:
-            raise SportmonksError(f'Sportmonks pre-match request failed (HTTP {response.status_code}).')
+        response=None
+        for attempt in range(3):
+            try:
+                response=self.session.get(f'{base}/{suffix}'.rstrip('/'),
+                    headers={'Authorization':self._token,'Accept':'application/json'},
+                    params=params,timeout=self.timeout)
+            except (requests.Timeout,requests.ConnectionError,requests.exceptions.ChunkedEncodingError) as exc:
+                code='timeout' if isinstance(exc,requests.Timeout) else 'connection_failure'
+                if attempt<2:
+                    time.sleep(attempt+1)
+                    continue
+                raise PrematchTemporaryError(f'Sportmonks pre-match {code.replace("_"," ")} after 3 read attempts.',code=code) from None
+            except requests.RequestException:
+                raise SportmonksError('Sportmonks pre-match request could not be sent.') from None
+            status=response.status_code
+            if status in (429,500,502,503,504):
+                code='rate_limited' if status==429 else 'server_unavailable'
+                delay=retry_delay(response,attempt)
+                response.close()
+                if attempt<2 and delay is not None:
+                    time.sleep(delay)
+                    continue
+                raise PrematchTemporaryError(f'Sportmonks pre-match source unavailable (HTTP {status}); bounded read retries stopped.',code=code)
+            if status==401:
+                raise SportmonksError('Sportmonks authentication denied; check the API credential.')
+            if status in (403,404):
+                raise PrematchDataUnavailableError(f'Sportmonks requested pre-match data unavailable (HTTP {status}); check coverage.')
+            if status!=200:
+                raise SportmonksError(f'Sportmonks pre-match request failed (HTTP {status}).')
+            break
         try:
             payload = response.json()
         except ValueError:
-            raise SportmonksError('Sportmonks returned invalid pre-match JSON.') from None
+            raise PrematchDataUnavailableError('Sportmonks returned invalid pre-match JSON.') from None
         if not isinstance(payload, dict):
-            raise SportmonksError('Sportmonks returned invalid pre-match data.')
+            raise PrematchDataUnavailableError('Sportmonks returned invalid pre-match data.')
         return self._redact(payload)
 
     def subscribed_leagues(self):
