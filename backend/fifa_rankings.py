@@ -39,11 +39,17 @@ def fetch_rankings(fixture,checked_at=None):
                 page=browser.new_page()
                 page.set_default_timeout(5000)
                 page.goto(SOURCE,wait_until='domcontentloaded',timeout=15000)
+                full=page.get_by_role('button',name='Show full rankings',exact=True)
+                full.wait_for(state='visible',timeout=10000)
                 reject=page.get_by_role('button',name='Reject All',exact=True)
                 if reject.count() and reject.is_visible():reject.click()
-                full=page.get_by_role('button',name='Show full rankings',exact=True)
-                if full.count() and full.is_visible():full.click()
-                page.get_by_role('link',name=participants[0]['name'],exact=True).first.wait_for(state='visible',timeout=10000)
+                full.click()
+                # The initial short table can contain Brazil but not lower-ranked teams.
+                # Wait for every requested country row after expanding the full table.
+                for participant in participants:
+                    code=(participant.get('short_code') or '').upper()
+                    if re.fullmatch(r'[A-Z]{3}',code):
+                        page.locator(f'a[href*="/world-ranking/{code}?"]').first.wait_for(state='attached',timeout=10000)
                 # Never label the default live table as a published official release.
                 text=page.locator('body').inner_text()
                 if 'ranking is considered unofficial' not in text.lower():return []
@@ -68,7 +74,7 @@ def main():
     fixture={'participants':[{'id':i+1,'type':'national','gender':'male','short_code':code,
                 'name':names.get(code,code)} for i,code in enumerate(args.codes)]}
     ranks=fetch_rankings(fixture)
-    print(json.dumps({'source':SOURCE,'status':'available' if ranks else 'unavailable_optional','rankings':ranks}))
+    print(json.dumps({'source':SOURCE,'status':'available' if len(ranks)==len(args.codes) else 'partial' if ranks else 'unavailable_optional','rankings':ranks}))
 
 
 if __name__=='__main__':main()
