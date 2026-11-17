@@ -95,13 +95,17 @@ def validate_draft(value,prediction,packet):
         if section['kind']=='venue' and 'venue' not in facts: errors.append('Omit venue context when absent.')
     script=' '.join(section['text'] for section in sections)
     normalized=folded(script)
-    past_scores={f"{fact['goals_for']}-{fact['goals_against']}" for key,fact in facts.items() if key.endswith('_latest')}
+    past_scores={score for key,fact in facts.items() if key.endswith('_latest')
+                 for score in (f"{fact['goals_for']}-{fact['goals_against']}",f"{fact['goals_against']}-{fact['goals_for']}")}
     if any(f'{a}-{b}' not in past_scores for a,b in re.findall(r'(\d+)\s*[-–:]\s*(\d+)',script)):
         errors.append('Only supplied past-result scores may appear before the final prediction.')
     cited={key for section in sections for key in section['evidence_ids']}
     for side in ('home','away'):
         key=f'{side}_latest';latest=facts.get(key)
-        if latest and (key not in cited or folded(latest['opponent']) not in normalized):
+        latest_text=folded(' '.join(section['text'] for section in sections if key in section['evidence_ids']))
+        result_words={'L':r'\b(lost|loss|defeat|beaten)\b','W':r'\b(won|win|beat|victory)\b','D':r'\b(drew|draw|stalemate)\b'}
+        if latest and (key not in cited or folded(latest['opponent']) not in latest_text
+                       or not re.search(result_words[latest['result']],latest_text)):
             errors.append('Mention and cite each team latest completed result, including its opponent. Do not hide a latest defeat behind an aggregate.')
     if not any(scope in normalized for scope in ('league','friendl','this competition',folded(prediction['competition']))):
         errors.append('Describe form as league games, friendlies or this competition; the sample is not all competitions.')

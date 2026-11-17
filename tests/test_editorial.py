@@ -163,3 +163,11 @@ def test_latest_cross_competition_result_keeps_scope(editorial_input):
     packet=evidence_packet(editorial_input)
     assert packet['evidence']['home_latest']['competition']=='World Cup'
     assert packet['evidence']['home_form']['sample_size']==5
+
+
+def test_latest_opponent_reference_must_state_the_result(editorial_input,draft):
+    editorial_input['form']['home']['matches']=[{'opponent':'Japan','result':'L','goals_for':2,'goals_against':3}]
+    draft['sections'][-1]['text']+=' Japan were the opposition in their last league game.'
+    draft['sections'][-1]['evidence_ids'].append('home_latest')
+    with pytest.raises(EditorialError,match='latest completed result'):
+        validate_draft(draft,editorial_input,evidence_packet(editorial_input))
