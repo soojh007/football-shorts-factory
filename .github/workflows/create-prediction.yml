@@ -22,7 +22,7 @@ permissions:
   actions: read
 jobs:
   readiness:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 125
     outputs:
       ready: ${{ steps.readiness.outputs.ready }}
@@ -51,7 +51,7 @@ jobs:
     concurrency:
       group: factory-private-upload
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
       SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
@@ -72,8 +72,8 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install rendering tools
-        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Set up cached rendering tools
+        uses: ./.github/actions/setup-rendering
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
       - name: Prepare secure credentials and recover upload state
