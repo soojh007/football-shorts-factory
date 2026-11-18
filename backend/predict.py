@@ -11,7 +11,7 @@ import tempfile
 from dotenv import load_dotenv
 
 from backend.analyze import save_text
-from backend.captions import CaptionError,TranscriptionClient,align_captions,srt_text
+from backend.captions import CaptionError,TranscriptionClient,align_captions,align_with_recovery,prediction_glossary,srt_text
 from backend.main import ROOT,positive_int,save_json
 from backend.narrate import save_audio
 from backend.prediction import PredictionError,make_prediction,teams_for_preview,prediction_content_hash
@@ -100,7 +100,14 @@ def render_prediction(prediction,out):
         client=TranscriptionClient()
         with client.session:
             words=client.transcribe(audio_path)
-    aligned=align_captions(prediction['script'],words,measured['duration_seconds'])
+    def retry_transcription():
+        print('Caption word match below 90%; retrying transcription once with team/player spelling hints.',flush=True)
+        client=TranscriptionClient()
+        with client.session:
+            return client.transcribe(audio_path,glossary=prediction_glossary(prediction))
+    words,aligned,recovered=align_with_recovery(prediction['script'],words,measured['duration_seconds'],
+                                               retry_transcription=retry_transcription)
+    print(f"Caption word match: {aligned['alignment_coverage']:.1%}"+(' after glossary-assisted retry.' if recovered else '.'),flush=True)
     save_json(cache_path,{**expected,'words':words,**aligned})
     with tempfile.TemporaryDirectory(prefix='.prediction-',dir=out) as folder:
         workdir=Path(folder)

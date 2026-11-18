@@ -90,3 +90,60 @@ def test_transcription_timeout(tmp_path):
     with pytest.raises(CaptionError) as exc:
         TranscriptionClient(api_key='synthetic-key', session=session).transcribe(audio)
     assert 'synthetic-key' not in str(exc.value)
+
+
+def test_accented_names_and_expanded_contractions_preserve_original_captions():
+    script="I'm backing Công An Hồ Chí Minh. I've watched José and Đặng. They don't need a different spelling."
+    transcript="I am backing Cong An Ho Chi Minh. I have watched Jose and Dang. They do not need a different spelling."
+    result=align_captions(script,timed_words(transcript),14)
+    assert result['alignment_coverage']==1
+    assert ' '.join(c['text'] for c in result['captions'])==script
+
+
+def test_negation_and_scores_are_not_normalized_away():
+    assert tokens("don't")==tokens('do not')
+    assert tokens("don't")!=tokens('do')
+    assert tokens('2–1')!=tokens('1–2')
+
+
+def test_one_recovery_transcription_still_requires_matching_audio():
+    from backend.captions import align_with_recovery,CaptionMismatchError
+    script='This is my football prediction for the match tonight.'
+    retry=Mock(return_value=timed_words(script))
+    words,result,recovered=align_with_recovery(script,timed_words('Totally unrelated narration content'),7,retry_transcription=retry)
+    assert recovered and result['alignment_coverage']==1
+    retry.assert_called_once_with()
+    retry.reset_mock()
+    retry.return_value=timed_words('Still unrelated narration content')
+    with pytest.raises(CaptionMismatchError,match='word match'):
+        align_with_recovery(script,words=timed_words('Unrelated audio content'),duration=7,retry_transcription=retry)
+    retry.assert_called_once_with()
+
+
+def test_invalid_timing_never_gets_a_transcription_retry():
+    from backend.captions import align_with_recovery
+    retry=Mock()
+    with pytest.raises(CaptionError):
+        align_with_recovery('test',[{'word':'test','start':-1,'end':1}],3,retry_transcription=retry)
+    retry.assert_not_called()
+
+
+def test_good_alignment_never_gets_a_transcription_retry():
+    from backend.captions import align_with_recovery
+    retry=Mock()
+    _,_,recovered=align_with_recovery('This is a test.',timed_words('This is a test.'),3,retry_transcription=retry)
+    assert not recovered
+    retry.assert_not_called()
+
+
+def test_glossary_request_is_spelling_hints_only(tmp_path):
+    from backend.captions import prediction_glossary
+    p={'teams':{'home':{'name':'Công An Hồ Chí Minh'},'away':{'name':'Buriram United'}},
+       'featured_players':{'home':[{'name':'José'}]},'script':'Do not supply this entire script.'}
+    glossary=prediction_glossary(p)
+    assert glossary=='Công An Hồ Chí Minh, Buriram United, José'
+    audio=tmp_path/'test.wav';audio.write_bytes(b'fake-audio')
+    session=Mock();session.post.return_value.status_code=200
+    session.post.return_value.json.return_value={'words':timed_words('Test audio')}
+    TranscriptionClient(api_key='synthetic-key',session=session).transcribe(audio,glossary=glossary)
+    assert session.post.call_args.kwargs['data']['prompt']==glossary

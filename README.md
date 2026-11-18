@@ -534,3 +534,12 @@ fails. The first run on a new cache/branch can still download packages; fresh
 runners must still unpack/install dependencies on cache hits. This is a download
 cache, not a persistent VM or a prebuilt renderer image. Pip downloads are cached
 separately by setup-python.
+
+Caption alignment preserves the approved script's original spelling while matching
+accent-insensitive Latin names and common expanded English contractions. The 90%
+word-match threshold remains in force. If an otherwise valid transcript falls
+below it, prediction rendering retries transcription once with a short team/player
+name glossary, rather than the expected full script. A second mismatch stops
+before rendering/upload; invalid timestamps and API errors do not trigger this
+retry. Logs report match percentage without exposing private narration. See the
+[OpenAI transcription prompting guide](https://developers.openai.com/api/docs/guides/speech-to-text).
