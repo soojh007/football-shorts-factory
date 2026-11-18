@@ -62,6 +62,12 @@ def backup_draft(prediction,packet):
     pick=home if side=='home' else away
     opinion=(f"I fancy {pick} to take this one. That's where I land after looking at both sides."
              if side!='draw' else f"I keep coming back to a draw here. I see {home} and {away} finishing level.")
+    from backend.presentation import selection
+    personality=selection(prediction)[1]
+    if side!='draw':
+        opinion=(opinion, f"I'm backing {pick} here. That's the call I'm excited to put on the table.",
+                 f"Put it this way: I fancy {pick}. I'll stick my neck out on that one.",
+                 f"For me, the verdict is {pick}. That's the side I'm backing in this matchup.")[personality]
     people={s:next((p for p in packet['players'] if p['side']==s),None) for s in ('home','away')}
     hp,ap=people['home'],people['away']
     player_ids=[hp['id'],ap['id']] if hp and ap else []
@@ -81,6 +87,15 @@ def backup_draft(prediction,packet):
         if index==0:
             hook=(f"My pick is {pick}. I like their side of this matchup, and I'm sticking with that call."
                   if side!='draw' else f"My pick is a draw. For me, neither side gets the edge in this matchup.")
+            if personality:
+                hook=(f"I'm backing {pick} here. That's my pick, and I'm ready to put it on the table."
+                      if side!='draw' else "I'm backing a draw here. That's the call I'm putting on the table.")
+                if personality==2:
+                    hook=(f"My pick is {pick}. Football can argue with me later; that's where I land."
+                          if side!='draw' else "My pick is a draw. Football can argue with me later; that's where I land.")
+                elif personality==3:
+                    hook=(f"For me, the verdict is {pick}. That's the side I'm backing in this matchup."
+                          if side!='draw' else "For me, the verdict is a draw. That's where I land in this matchup.")
             return [scene('hook',hook,['score_pick']),scene('players',names,name_keys),
                     scene('players',' '.join(filter(None,[latest,form_text,rank])),latest_keys+form_keys+rank_keys)]
         if index==1:
@@ -106,4 +121,10 @@ def backup_draft(prediction,packet):
                 f"{away} have {a['wins']} wins and {a['draws']} draws. That adds to the picture behind my call.")
         sections[1]['text']+=record
         sections[1]['evidence_ids']=list(dict.fromkeys(sections[1]['evidence_ids']+form_keys))
+    if total()<95:
+        reactions=("That's the balance I'm taking into this game, and the call I'm comfortable making.",
+                   "That's what has me interested in this game. I'm ready to see it play out.",
+                   "I've picked my side of the argument. Now football gets to have its say.",
+                   "I've weighed up both sides, and that's the verdict I'm taking into this game.")
+        sections[1]['text']+=' '+reactions[personality]
     return {'pick_side':side,'featured_player_ids':player_ids,'sections':sections}

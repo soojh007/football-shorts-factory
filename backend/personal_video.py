@@ -5,26 +5,28 @@ from backend.player_media import media_frame
 from backend.video import text_block
 from backend.prediction_video import pitch
 
-BG,WHITE,LIME,ORANGE='#101814','#faf5e8','#c2ff67','#ff8055'
+from backend.presentation import palette_for
 
 
-def photo(image,draw,asset,box,phase,time_seconds=0):
+def photo(image,draw,asset,box,phase,time_seconds=0,*,palette=None):
+    palette=palette or palette_for({})
+    BG,WHITE,LIME=palette['bg'],palette['text'],palette['accent']
     x0,y0,x1,y1=box
-    draw.rounded_rectangle((x0+9,y0+13,x1+9,y1+13),radius=25,fill='#050a07')
-    draw.rounded_rectangle(box,radius=25,fill='#263a2c')
+    draw.rounded_rectangle((x0+9,y0+13,x1+9,y1+13),radius=25,fill=palette['shadow'])
+    draw.rounded_rectangle(box,radius=25,fill=palette['surface'])
     if asset and asset.get('kind')=='team':
-        pitch(draw,(x0+35,y0+80,x1-35,y1-155),'#658452',3)
+        pitch(draw,(x0+35,y0+80,x1-35,y1-155),palette['pitch'],3)
         text_block(draw,asset['name'],(x0+18,y1-135,x1-18,y1-18),36,WHITE,max_lines=3)
     elif asset and asset.get('kind')=='graphic':
         center=(x0+x1)//2;top=y0+75
-        draw.polygon([(center-80,top),(center-145,top+45),(center-110,top+100),(center-80,top+82),(center-80,top+245),(center+80,top+245),(center+80,top+82),(center+110,top+100),(center+145,top+45),(center+80,top)],fill='#385c40',outline=LIME,width=4)
+        draw.polygon([(center-80,top),(center-145,top+45),(center-110,top+100),(center-80,top+82),(center-80,top+245),(center+80,top+245),(center+80,top+82),(center+110,top+100),(center+145,top+45),(center+80,top)],fill=palette['shirt'],outline=LIME,width=4)
         text_block(draw,str(asset.get('jersey_number') or 'XI'),(center-65,top+55,center+65,top+195),70,WHITE,max_lines=1)
         text_block(draw,asset['name'],(x0+18,y1-110,x1-18,y1-18),34,WHITE,max_lines=2)
     elif asset:
         source=media_frame(asset,time_seconds)
         if min(source.size)<300 and asset.get('kind')!='video':
             # Keep tiny provider cutouts in a deliberately smaller portrait area.
-            fitted=Image.new('RGBA',(x1-x0,y1-y0),'#263a2c')
+            fitted=Image.new('RGBA',(x1-x0,y1-y0),palette['surface'])
             portrait=ImageOps.contain(source,(280,min(340,y1-y0-135)),method=Image.Resampling.LANCZOS)
             fitted.alpha_composite(portrait,((fitted.width-portrait.width)//2,(fitted.height-portrait.height-100)//2))
         else:
@@ -42,9 +44,11 @@ def photo(image,draw,asset,box,phase,time_seconds=0):
 
 def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
     from backend.prediction_video import section_at,pitch
+    palette=palette_for(prediction)
+    BG,WHITE,LIME,ORANGE=(palette[k] for k in ('bg','text','accent','secondary'))
     image=Image.new('RGB',(1080,1920),BG);draw=ImageDraw.Draw(image)
-    draw.ellipse((-280,-440,1120,1050),fill='#193124')
-    draw.ellipse((480,1060,1560,2140),outline='#294332',width=3)
+    draw.ellipse((-280,-440,1120,1050),fill=palette['orb'])
+    draw.ellipse((480,1060,1560,2140),outline=palette['outline'],width=3)
     draw.line((60,88,1020,88),fill=LIME,width=8)
     label='DESIGN PREVIEW' if prediction.get('design_preview') else 'MY MATCHDAY TAKE'
     text_block(draw,label,(66,118,1014,182),34,LIME,'left',1)
@@ -76,10 +80,10 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
         action=[selected[side] for side in ('home','away') if selected[side] and selected[side].get('visual_type')=='action']
         if action and int(time_seconds/3.5)%3!=2:
             hero=action[int(time_seconds/3.5)%len(action)]
-            photo(image,draw,hero,(64,430,1016,1035),animation,time_seconds)
+            photo(image,draw,hero,(64,430,1016,1035),animation,time_seconds,palette=palette)
         else:
-            photo(image,draw,selected['home'],(64,444+offset,506,1010+offset),animation,time_seconds)
-            photo(image,draw,selected['away'],(574,444-offset,1016,1010-offset),animation,time_seconds)
+            photo(image,draw,selected['home'],(64,444+offset,506,1010+offset),animation,time_seconds,palette=palette)
+            photo(image,draw,selected['away'],(574,444-offset,1016,1010-offset),animation,time_seconds,palette=palette)
         if kind=='hook':
             text_block(draw,"HERE'S MY TAKE",(66,1080,1014,1210),78,LIME,'left',2)
             ranks=prediction.get('context',{}).get('fifa_rankings',{})
@@ -114,7 +118,7 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
             text_block(draw,'LATEST COMPLETED RESULTS',(66,1270,1014,1350),30,WHITE,'left',2)
     elif kind=='venue':
         venue=prediction.get('context',{}).get('venue') or {}
-        pitch(draw,(130,490,950,1080),'#44654a',5)
+        pitch(draw,(130,490,950,1080),palette['pitch'],5)
         draw.ellipse((465,705,615,855),fill=ORANGE)
         draw.polygon([(488,805),(592,805),(540,930)],fill=ORANGE)
         text_block(draw,'THE GROUND MATTERS',(66,1120,1014,1230),66,LIME,'left',2)
@@ -122,8 +126,8 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
         status='Neutral venue' if venue.get('neutral') is True else (venue.get('city') or ('Venue country checked' if venue.get('country_id') is not None else 'Venue advantage not assumed'))
         text_block(draw,status,(66,420,1014,485),31,WHITE,'left',1)
     elif kind=='pick':
-        photo(image,draw,selected['home'],(64,450,506,920),animation,time_seconds)
-        photo(image,draw,selected['away'],(574,450,1016,920),animation,time_seconds)
+        photo(image,draw,selected['home'],(64,450,506,920),animation,time_seconds,palette=palette)
+        photo(image,draw,selected['away'],(574,450,1016,920),animation,time_seconds,palette=palette)
         score=prediction['forecast']['score_pick']
         text=f"{score['home']} : {score['away']}"
         text_block(draw,'MY PICK',(66,977,1014,1057),39,LIME,'left',1)
@@ -132,7 +136,7 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
         text_block(draw,"WHAT COULD CHANGE MY MIND?",(66,480,1014,765),91,LIME,'left',3)
         for i,text in enumerate(('LATE CHANGES','OPPONENT QUALITY','UNCERTAINTY')):
             y=830+i*168
-            draw.rounded_rectangle((66,y,1014,y+122),radius=20,fill='#213a2a')
+            draw.rounded_rectangle((66,y,1014,y+122),radius=20,fill=palette['surface'])
             text_block(draw,text,(92,y+14,988,y+110),47,WHITE,'left',2)
     draw.rounded_rectangle((48,1470,1032,1750),radius=28,fill=WHITE)
     text_block(draw,caption['text'],(93,1492,987,1722),60,BG,max_lines=3)

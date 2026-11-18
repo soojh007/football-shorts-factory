@@ -506,3 +506,21 @@ Permission errors require checking the connected channel or OAuth authorization.
 Raw API messages, upload session URLs and credentials are never logged. Failed
 upload reservations remain blocked until reviewed in YouTube Studio; a failed
 run must not be blindly retried or its receipt deleted.
+
+### Rotating video looks and narrator personalities
+
+New contextual prediction videos rotate four readable palettes: Stadium green,
+Electric blue, Sunset cream and Midnight violet. Four narrator personalities
+rotate alongside them: composed male (cedar), lively female (coral), wry male
+(ash), and assured female (marin). Each has distinct editorial and speech
+instructions, with natural Singaporean English delivery requested. These are AI
+voice delivery directions, not claims about a real speaker's identity.
+
+Selection uses the existing count of unique successful uploads for the connected
+channel. Failed jobs and previews do not advance it. The voice-to-colour pairing
+shifts after each four uploads, producing 16 combinations before repeating. The
+existing four script structures continue to rotate. Style choices never change
+the evidence, forecast or final score reveal. The selected identity is saved in
+prediction/render metadata, and speech caches include voice and delivery settings.
+All videos remain private. Speech controls follow the
+[OpenAI text-to-speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
