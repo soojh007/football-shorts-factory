@@ -121,4 +121,10 @@ def backup_draft(prediction,packet):
                 f"{away} have {a['wins']} wins and {a['draws']} draws. That adds to the picture behind my call.")
         sections[1]['text']+=record
         sections[1]['evidence_ids']=list(dict.fromkeys(sections[1]['evidence_ids']+form_keys))
+    if total()<95:
+        reactions=("That's the balance I'm taking into this game, and the call I'm comfortable making.",
+                   "That's what has me interested in this game. I'm ready to see it play out.",
+                   "I've picked my side of the argument. Now football gets to have its say.",
+                   "I've weighed up both sides, and that's the verdict I'm taking into this game.")
+        sections[1]['text']+=' '+reactions[personality]
     return {'pick_side':side,'featured_player_ids':player_ids,'sections':sections}
