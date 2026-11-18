@@ -1,0 +1,20 @@
+name: Set up rendering tools
+description: Reuse installed tools and cache Ubuntu rendering package downloads
+runs:
+  using: composite
+  steps:
+    - name: Restore rendering package downloads
+      id: cache
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ runner.temp }}/factory-render-apt
+        key: render-apt-v1-${{ runner.os }}-${{ runner.arch }}-ubuntu24-${{ hashFiles('scripts/setup-rendering.sh') }}
+    - name: Install missing tools and verify encoders
+      shell: bash
+      run: bash scripts/setup-rendering.sh
+    - name: Save rendering package downloads
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ runner.temp }}/factory-render-apt
+        key: render-apt-v1-${{ runner.os }}-${{ runner.arch }}-ubuntu24-${{ hashFiles('scripts/setup-rendering.sh') }}

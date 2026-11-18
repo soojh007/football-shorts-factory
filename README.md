@@ -524,3 +524,13 @@ the evidence, forecast or final score reveal. The selected identity is saved in
 prediction/render metadata, and speech caches include voice and delivery settings.
 All videos remain private. Speech controls follow the
 [OpenAI text-to-speech guide](https://developers.openai.com/api/docs/guides/text-to-speech).
+
+Rendering jobs use Ubuntu 24.04 explicitly. The rendering setup first reuses any
+installed FFmpeg/ffprobe and supported font, installs only missing packages with
+`--no-install-recommends`, and caches the downloaded Ubuntu packages using GitHub
+Actions cache. It also smoke-tests H.264/AAC encoding and ffprobe before paid
+production. The cache is saved immediately after setup, even if a later upload
+fails. The first run on a new cache/branch can still download packages; fresh
+runners must still unpack/install dependencies on cache hits. This is a download
+cache, not a persistent VM or a prebuilt renderer image. Pip downloads are cached
+separately by setup-python.
