@@ -210,8 +210,11 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     save_json(out/f'{fixture_id}_web_research.json',research)
     from backend.narration_templates import choose_template
     prediction['narration_template']=choose_template(out,os.getenv('YOUTUBE_CHANNEL_ID',''))
+    from backend.presentation import choose_presentation
+    prediction['presentation']=choose_presentation(prediction['narration_template']['successful_uploads_before_this'])
     selected=prediction['narration_template']
     report(f"Narration format {selected['index']+1}/4: {selected['name']}")
+    report('Video identity: '+prediction['presentation']['palette_name']+' / '+prediction['presentation']['personality_name'])
     report('Writing a personal football take with the editorial agent')
     editor=EditorialClient()
     with editor.session:

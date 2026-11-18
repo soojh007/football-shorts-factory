@@ -18,7 +18,7 @@ from backend.prediction import PredictionError,make_prediction,teams_for_preview
 from backend.prediction_video import STYLE_VERSION,draw_prediction_frame,section_at
 from backend.prematch import PrematchClient
 from backend.render import load_words
-from backend.speech import SpeechClient,SpeechError,sha256,wav_metadata,PERSONAL_VOICE,PERSONAL_VOICE_INSTRUCTIONS
+from backend.speech import SpeechClient,SpeechError,sha256,wav_metadata
 from backend.sportmonks import SportmonksError
 from backend.video import VideoError,require_tools,encode_video,probe_video
 
@@ -72,10 +72,8 @@ def render_prediction(prediction,out):
     audio_metadata=out/f'{prefix}_narration.json'
     settings={'script_sha256':sha256(prediction['script'].encode()),'model':'gpt-4o-mini-tts','voice':'coral','speed':1.1}
     if prediction.get('context'):
-        settings['delivery']='personal-singapore-male-v1'
-        settings['voice']=PERSONAL_VOICE
-        settings['speed']=1.0
-        settings['instructions']=PERSONAL_VOICE_INSTRUCTIONS
+        from backend.presentation import speech_settings
+        settings.update(speech_settings(prediction))
     audio=None
     if audio_path.exists() and audio_metadata.exists():
         cached=json.loads(audio_metadata.read_text())
@@ -152,6 +150,7 @@ def render_prediction(prediction,out):
     save_text(out/f'{prefix}_captions.srt',srt_text(captions))
     save_json(out/f'{prefix}_render.json',{'content_type':'prediction','fixture_id':prediction['fixture_id'],
         'league_id':prediction['league_id'],'as_of':prediction['as_of'],
+        'presentation':prediction.get('presentation'), 'voice':settings['voice'],
         'style_version':STYLE_VERSION,'narration_duration_seconds':measured['duration_seconds'],'end_card_hold_seconds':hold,'graphics_motion_fps':motion_fps,'footer_visible':False,
         'prediction_sha256':prediction_content_hash(prediction),'script_sha256':settings['script_sha256'],
         'audio_sha256':sha256(audio),

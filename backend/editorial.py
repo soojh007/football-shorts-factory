@@ -200,10 +200,12 @@ class EditorialClient:
     def write(self,prediction):
         packet=evidence_packet(prediction)
         template=template_for(prediction)
+        from backend.presentation import personality_for
+        persona=personality_for(prediction)
         feedback=None
         diagnostics=[]
         for attempt in range(2):
-            body={'model':self.model,'store':False,'max_output_tokens':2500,'instructions':PROMPT+'\nASSIGNED NARRATION FORMAT: '+template['name']+'\n'+template['instructions'],
+            body={'model':self.model,'store':False,'max_output_tokens':2500,'instructions':PROMPT+'\nASSIGNED NARRATION FORMAT: '+template['name']+'\n'+template['instructions']+'\nASSIGNED PERSONALITY: '+persona['writing'],
                   'input':json.dumps({'match_evidence':packet,'revision_feedback':feedback},ensure_ascii=False),
                   'text':{'format':{'type':'json_schema','name':'personal_match_take','strict':True,'schema':Draft.model_json_schema()}}}
             if self.model=='gpt-5.2': body['reasoning']={'effort':'none'}

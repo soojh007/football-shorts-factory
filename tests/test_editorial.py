@@ -228,3 +228,28 @@ def test_alternate_formats_reject_another_direct_pick_opener(editorial_input,ind
     draft['sections'][0]['text']="I'm backing Tenerife. "+draft['sections'][0]['text']
     with pytest.raises(EditorialError,match='narration format opening'):
         validate_draft(draft,editorial_input,packet)
+
+
+@pytest.mark.parametrize('n',range(4))
+def test_personality_reaches_writer_and_preserves_forecast(editorial_input,draft,n):
+    from backend.presentation import choose_presentation,personality_for
+    editorial_input['presentation']=choose_presentation(n)
+    session=Mock();session.post.side_effect=[response(draft),response({'approved':True,'issues':[]})]
+    result=EditorialClient(api_key='synthetic-key',session=session).write(editorial_input)
+    instructions=session.post.call_args_list[0].kwargs['json']['instructions']
+    assert personality_for(editorial_input)['writing'] in instructions
+    assert result['presentation']==editorial_input['presentation']
+    assert result['forecast']==editorial_input['forecast']
+
+
+@pytest.mark.parametrize('n',range(16))
+def test_grounded_backup_valid_for_all_format_personality_pairings(editorial_input,n):
+    from backend.presentation import choose_presentation
+    from backend.narration_templates import backup_draft
+    editorial_input['presentation']=choose_presentation(n)
+    editorial_input['narration_template']={'index':n%4}
+    packet=evidence_packet(editorial_input)
+    candidate=backup_draft(editorial_input,packet)
+    result=validate_draft(candidate,editorial_input,packet)
+    assert result['forecast']==editorial_input['forecast']
+    assert result['sections'][-1]['kind']=='pick'

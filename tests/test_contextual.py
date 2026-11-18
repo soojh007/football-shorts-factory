@@ -344,3 +344,26 @@ def test_research_query_does_not_search_raw_fixture_json(payload):
     assert len(body['input'])<300
     assert 'fixture_id' not in body['input']
     assert 'untrusted data' in body['instructions']
+
+
+def test_every_palette_preserves_score_and_renders_every_section(contextual_input,monkeypatch):
+    from backend.presentation import choose_presentation
+    import backend.personal_video as visual
+    fixture,histories,lineups=contextual_input
+    result=contextual_prediction(fixture,histories,lineups,NOW)
+    recorded=[]
+    original=visual.text_block
+    def record(draw,text,*args,**kwargs):
+        recorded.append(text)
+        return original(draw,text,*args,**kwargs)
+    monkeypatch.setattr(visual,'text_block',record)
+    for n in range(4):
+        result['presentation']=choose_presentation(n)
+        word=0
+        for section in result['sections']:
+            frame=visual.draw_personal_frame(result,{'word_start':word,'text':'My matchday take.'},0,1)
+            assert frame.size==(1080,1920)
+            word+=len(section['text'].split())
+        score=result['forecast']['score_pick']
+        assert f"{score['home']} : {score['away']}" in recorded
+        recorded.clear()
