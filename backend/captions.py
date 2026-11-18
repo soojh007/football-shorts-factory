@@ -3,6 +3,7 @@ from difflib import SequenceMatcher
 import math
 import os
 import re
+import unicodedata
 
 import requests
 
@@ -11,15 +12,41 @@ class CaptionError(ValueError):
     """Safe caption/timestamp failure."""
 
 
+class CaptionMismatchError(CaptionError):
+    def __init__(self, coverage):
+        self.coverage=coverage
+        super().__init__(f'Narration differs too much from the script for reliable captions '
+                         f'(word match {coverage:.1%}; required 90%); review the audio.')
+
+
+CONTRACTIONS = {
+    "i'm": 'i am', "i've": 'i have', "i'll": 'i will', "i'd": 'i would',
+    "we're": 'we are', "we've": 'we have', "we'll": 'we will',
+    "they're": 'they are', "they've": 'they have', "they'll": 'they will',
+    "you're": 'you are', "you've": 'you have', "you'll": 'you will',
+    "it's": 'it is', "that's": 'that is', "there's": 'there is',
+    "here's": 'here is', "what's": 'what is', "let's": 'let us',
+    "don't": 'do not', "doesn't": 'does not', "didn't": 'did not',
+    "isn't": 'is not', "aren't": 'are not', "wasn't": 'was not',
+    "weren't": 'were not', "can't": 'cannot', "won't": 'will not',
+    "hasn't": 'has not', "haven't": 'have not', "wouldn't": 'would not',
+    "couldn't": 'could not', "shouldn't": 'should not',
+}
+
+
 ONES = 'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen'.split()
 TENS = 'zero ten twenty thirty forty fifty sixty seventy eighty ninety'.split()
 
 
 def tokens(text):
     result = []
+    text=''.join(c for c in unicodedata.normalize('NFKD',text.casefold()) if not unicodedata.combining(c))
+    text=text.replace('đ','d')
     for token in re.findall(r"[\w]+(?:['’][\w]+)?", text.lower()):
         token = token.replace('’', "'")
-        if token.isascii() and token.isdigit() and int(token) < 100:
+        if token in CONTRACTIONS:
+            result.extend(CONTRACTIONS[token].split())
+        elif token.isascii() and token.isdigit() and int(token) < 100:
             value = int(token)
             result.extend([ONES[value]] if value < 20 else [TENS[value // 10]] + ([ONES[value % 10]] if value % 10 else []))
         else:
@@ -55,7 +82,7 @@ def align_captions(script, words, duration):
     matches = sum(block.size for block in blocks)
     coverage = matches / max(len(source), len(spoken), 1)
     if coverage < 0.90:
-        raise CaptionError('Narration differs too much from the script for reliable captions; review the audio.')
+        raise CaptionMismatchError(coverage)
     anchors = {}
     for block in blocks:
         for offset in range(block.size):
@@ -95,6 +122,25 @@ def align_captions(script, words, duration):
     return {'alignment_coverage': round(coverage, 4), 'captions': captions}
 
 
+
+def align_with_recovery(script, words, duration, *, retry_transcription=None):
+    """One glossary-assisted ASR retry; never bypass mismatches or invalid timing."""
+    try:
+        return words, align_captions(script,words,duration), False
+    except CaptionMismatchError:
+        if retry_transcription is None:
+            raise
+    retried=retry_transcription()
+    return retried, align_captions(script,retried,duration), True
+
+
+def prediction_glossary(prediction):
+    names=[team['name'] for team in prediction['teams'].values()]
+    for side in ('home','away'):
+        names.extend(p['name'] for p in prediction.get('featured_players',{}).get(side,[]))
+    # Spelling hints only, rather than feeding the expected transcript to ASR.
+    return ', '.join(dict.fromkeys(names))[:300]
+
 def srt_text(captions):
     def timestamp(seconds):
         milliseconds = round(seconds * 1000)
@@ -115,16 +161,19 @@ class TranscriptionClient:
             raise CaptionError('Set OPENAI_API_KEY to create audio-aligned captions.')
         self.session = session or requests.Session()
 
-    def transcribe(self, audio_path):
+    def transcribe(self, audio_path, *, glossary=None):
         if audio_path.stat().st_size > 25 * 1024 * 1024:
             raise CaptionError('Narration exceeds the 25 MB transcription upload limit.')
+        data={'model': 'whisper-1', 'response_format': 'verbose_json',
+              'timestamp_granularities[]': 'word', 'language': 'en'}
+        if glossary:
+            data['prompt']=glossary[:300]
         try:
             with audio_path.open('rb') as audio:
                 response = self.session.post(self.URL,
                     headers={'Authorization': f'Bearer {self._key}'},
                     files={'file': ('narration.wav', audio, 'audio/wav')},
-                    data={'model': 'whisper-1', 'response_format': 'verbose_json',
-                          'timestamp_granularities[]': 'word', 'language': 'en'}, timeout=60)
+                    data=data, timeout=60)
         except requests.Timeout:
             raise CaptionError('Caption transcription timed out; retry when ready.') from None
         except requests.RequestException:
