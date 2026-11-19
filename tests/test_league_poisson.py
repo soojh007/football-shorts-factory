@@ -136,3 +136,11 @@ def test_lineup_weight_provenance_only_counts_selected_observations(league_data)
     assert not info['lineup_weighting_applied']
     _,info=league_rates(f,rows,NOW,profiles={'home':{'samples':[{'fixture_id':1,'lineup_weight':.35}]}})
     assert info['lineup_weighting_applied']
+
+
+def test_overall_mode_is_distinct_from_outcome_conditioned_score_pick():
+    result=score_matrix(1.5,1.5)
+    assert result['overall_modal_score']=={'home':1,'away':1}
+    assert result['outcome']=='home'  # Stable tie break for symmetric H/A outcomes.
+    assert result['score_pick']=={'home':2,'away':1}
+    assert result['overall_modal_score_probability']>result['score_pick_probability']
