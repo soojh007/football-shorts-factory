@@ -49,5 +49,13 @@ averages, block on missing optional data, or claim calibration without actual
 chronological evaluation. Keep technical qualifications in evidence/metadata;
 narration remains personal and ends with the unchanged selected score.
 
+For retrospective tests, use `python -m backend.backtest` and a saved source
+snapshot. Freeze training before the first match of the holdout round and exclude
+all holdout fixture IDs. Strip target results and winner flags from model inputs;
+do not reconstruct historical lineups or ratings from post-match information.
+Compare with league-average and previous recent-form baselines, report every
+match and probability metrics, and label reconstructed outputs as retrospective,
+not archived pre-kickoff forecasts. Do not tune on the reported holdout.
+
 Creating or reviewing a prediction does not itself authorize uploading or
 publishing a video. Preserve existing private-upload and duplicate guards.

@@ -555,3 +555,12 @@ or league baselines use documented optional-data behaviour. The FIFA national-te
 model remains separate. See [the model and worked example](docs/league-poisson.md)
 and the reusable [prediction skill](skills/football-league-prediction/SKILL.md).
 This new club model is not yet chronologically backtested or calibrated.
+
+### Retrospective round backtests
+
+`python -m backend.backtest` evaluates a completed round with training frozen
+before its first kickoff, excludes all round targets from training, strips target
+scores/winner flags from model inputs, and compares the core league model with
+league-average and previous recent-form baselines. It makes no OpenAI, video or
+upload calls. See the [2026–27 EPL round 10 report](docs/backtests/epl-2026-27-round10.md)
+for results, limitations and replay commands.
