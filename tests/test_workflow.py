@@ -115,7 +115,7 @@ def setup_workflow(monkeypatch,ready):
     clock.now.return_value=NOW
     monkeypatch.setattr('backend.workflow.datetime',clock)
     monkeypatch.setattr('backend.workflow.enrich_history',lambda source,now,**kwargs:source)
-    def contextual(fixture,histories,lineups,now,league_id,research=None):
+    def contextual(fixture,histories,lineups,now,league_id,research=None,league_fixtures=None):
         return add_lineup_sections(make_prediction(fixture,histories,as_of=now,league_id=league_id),lineups)
     monkeypatch.setattr('backend.workflow.contextual_prediction',contextual)
     researcher=MagicMock();researcher.brief.return_value={'performed':True,'claims':[],'sources':[]}
@@ -316,3 +316,17 @@ def test_history_authentication_and_identity_errors_are_not_silently_skipped(rea
     with pytest.raises(SportmonksError):enrich_history(deepcopy(ready[1]),NOW)
     client.fixture_request.side_effect=None;client.fixture_request.return_value={'data':{'id':999999}}
     with pytest.raises(PredictionError,match='identity'):enrich_history(deepcopy(ready[1]),NOW)
+
+
+def test_optional_club_baseline_outage_does_not_block_video(ready,tmp_path,monkeypatch):
+    from backend.prematch import PrematchTemporaryError
+    fixture,source=ready
+    for p in fixture['participants']:p['type']='domestic'
+    setup_workflow(monkeypatch,ready)
+    lookup=Mock(side_effect=PrematchTemporaryError('temporary',code='timeout'))
+    monkeypatch.setattr('backend.league_poisson.collect_league_results',lookup)
+    reports=[]
+    monkeypatch.setattr('backend.workflow.reusable_video',lambda *args:True)
+    run_workflow(fixture['id'],out=tmp_path,upload=False,report=reports.append)
+    lookup.assert_called_once()
+    assert any('league baseline unavailable' in message for message in reports)

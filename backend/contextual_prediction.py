@@ -92,18 +92,12 @@ def lineup_profile(team_id,current,histories,form,cutoff):
 
 
 def distribution(home_rate,away_rate):
-    support=max(16,math.ceil(max(home_rate,away_rate)+8*math.sqrt(max(home_rate,away_rate))+5))
-    values=[(h,a,math.exp(-home_rate-away_rate)*home_rate**h/math.factorial(h)*away_rate**a/math.factorial(a))
-            for h in range(support) for a in range(support)]
-    mass=sum(p for _,_,p in values)
-    probabilities={key:sum(p for h,a,p in values if ('home' if h>a else 'away' if a>h else 'draw')==key)/mass
-                   for key in ('home','draw','away')}
-    outcome=max(probabilities,key=probabilities.get)
-    h,a,p=max((row for row in values if ('home' if row[0]>row[1] else 'away' if row[1]>row[0] else 'draw')==outcome),key=lambda row:row[2])
-    return probabilities,outcome,{'home':h,'away':a},p/mass
+    from backend.league_poisson import score_matrix
+    grid=score_matrix(home_rate,away_rate)
+    return grid['probabilities'],grid['outcome'],grid['score_pick'],grid['score_pick_probability']
 
 
-def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,research=None):
+def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,research=None,league_fixtures=None):
     if lineups.get('fixture_id')!=fixture.get('id'):
         raise PredictionError('The contextual forecast requires matching fixture identity.')
     lineups=deepcopy(lineups)
@@ -132,22 +126,37 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     if fitted:
         home_rate=fitted[0]*h['rating_factor'];away_rate=fitted[1]*a['rating_factor']
         applied_venue=strength['venue_factors']
-    probabilities,outcome,pick,score_mass=distribution(home_rate,away_rate)
+    from backend.league_poisson import league_rates,score_matrix,MODEL_VERSION
+    league_fit,league_detail=league_rates(fixture,league_fixtures,as_of,
+        neutral=venues['home']['neutral'] is True,profiles=profiles)
+    if league_fit and not fitted:
+        home_rate=league_fit[0]*h['rating_factor']
+        away_rate=league_fit[1]*a['rating_factor']
+        # League home/away averages already encode the fixture-role effect.
+        applied_venue={'home':1.0,'away':1.0}
+    matrix=score_matrix(home_rate,away_rate)
+    probabilities,outcome,pick,score_mass=(matrix[k] for k in ('probabilities','outcome','score_pick','score_pick_probability'))
     result['lineups']=deepcopy(lineups)
     result['context']={'venue':venues['home'],'venue_by_team':venues,'lineup_profiles':profiles,
                        'fifa_rankings':rank_by_side,'latest_matches':(research or {}).get('provider_latest',{}),'web_research':research or {'performed':False,'claims':[],'sources':[]}}
-    result['forecast']={'model':'lineup-fifa-strength-poisson-v4' if fitted else 'lineup-venue-form-poisson-v4','calibrated':False,'probabilities':probabilities,
+    result['forecast']={'model':'lineup-fifa-strength-poisson-v4' if fitted else MODEL_VERSION if league_fit else 'lineup-venue-form-poisson-v4','calibrated':False,'probabilities':probabilities,
         'outcome':outcome,'score_pick':pick,'score_pick_probability':score_mass,
         'model_goal_rates':{'home':home_rate,'away':away_rate},
-        'assumptions':{'strength_model':strength,'prior_matches':3,'prior_goals_per_game':1.4,'lineup_weight':'0.35 + 0.65 * overlap/11',
+        'overall_modal_score':matrix['overall_modal_score'],'overall_modal_score_probability':matrix['overall_modal_score_probability'],
+        'score_matrix':matrix['score_matrix'],
+        'assumptions':{'league_strength_model':league_detail,'score_selection':'modal score conditional on most likely outcome; overall modal score provided separately','independent_goal_counts':True,'strength_model':strength,'prior_matches':3,'prior_goals_per_game':None if league_fit else 1.4,'prior_baseline':{side:league_detail['teams'][side]['goals_for_baseline'] for side in ('home','away')} if league_fit else 'fixed recent-form prior','lineup_weight':'0.35 + 0.65 * overlap/11',
             'rating_adjustment':'1 + 0.08 * current-XI mean minus historical-XI mean; clipped 0.92–1.08; >=6 rated starters required',
             'venue_factors':factors,'applied_venue_factors':applied_venue,'lineup_overlay_coefficients_hand_set':True,'strength_coefficients_fitted':strength.get('applied',False)},
-        'limitations':['FIFA strength coefficients have chronological retrospective validation; outcome probabilities are not prospectively calibrated.','Lineup overlap is not a complete player-strength model.',
+        'limitations':['FIFA strength coefficients have chronological retrospective validation; outcome probabilities are not prospectively calibrated.' if fitted else 'The applied form/league model is not chronologically backtested or calibrated.','Lineup overlap is not a complete player-strength model.',
             'Player ratings are missing for some players and depend on provider coverage.','Travel and weather are not quantitatively modeled; rank-based strength requires matching FIFA points.',
             'Internet reports are sourced context and cross-checks, not arbitrary numeric boosts.']}
+    if league_fit:
+        result['forecast']['limitations'].append('League attack/defence model uses current-season pre-cutoff results with hand-set shrinkage; not yet chronologically backtested or calibrated.')
+    else:
+        result['forecast']['limitations'].append('League-relative baseline not applied: '+league_detail['reason']+'.')
     if any(form['sample_size']<3 for form in result['form'].values()):
         result['forecast']['limitations'].append('Small available result sample; prior shrinkage retained and actual sample sizes recorded.')
-    if venues['home']['role']=='unknown':
+    if venues['home']['role']=='unknown' and not league_fit:
         result['forecast']['limitations'].append('Venue context unavailable or conflicting; no venue adjustment applied.')
     home,away=result['teams']['home']['name'],result['teams']['away']['name']
     preferred=home if outcome=='home' else away if outcome=='away' else 'a draw'

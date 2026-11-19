@@ -171,8 +171,25 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         source=collect(client,fixture_id,league_id,now,fixture=fixture)
         report('Checking historical lineups, player ratings and venue context')
         source=enrich_history(source,now,report=report)
+    from backend.league_poisson import club_fixture,collect_league_results
+    source['league_fixtures']=[]
+    if club_fixture(source['fixture']):
+        report('Measuring current-season league home/away scoring baselines')
+        client=PrematchClient()
+        with client.session:
+            try:
+                source['league_fixtures']=collect_league_results(client,source['fixture'],now)
+            except (PrematchTemporaryError,PrematchDataUnavailableError):
+                source['league_model_availability']='temporarily_unavailable'
+                report('Optional league baseline unavailable; retaining the verified recent-form fallback.')
+    if club_fixture(source['fixture']):
+        save_json(out/f'{fixture_id}_league_model_input.json',{
+            'fixture_id':fixture_id,'league_id':league_id,'season_id':source['fixture'].get('season_id'),
+            'retrieved_at':datetime.now(timezone.utc).isoformat(),
+            'availability':source.get('league_model_availability','retrieved'),
+            'fixtures':source['league_fixtures']})
     # Validate data sufficiency before paying for web research.
-    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id)
+    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id,league_fixtures=source.get('league_fixtures'))
     from backend.freshness import latest_completed
     from backend.prediction import teams_for_preview
     report('Checking latest completed matches across accessible competitions')
@@ -206,7 +223,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     research['provider_latest']=latest
     # Timestamp the forecast after source retrieval, and recheck that kickoff is still in the future.
     forecast_at=datetime.now(timezone.utc)
-    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,forecast_at,league_id=league_id,research=research)
+    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,forecast_at,league_id=league_id,research=research,league_fixtures=source.get('league_fixtures'))
     save_json(out/f'{fixture_id}_web_research.json',research)
     from backend.narration_templates import choose_template
     prediction['narration_template']=choose_template(out,os.getenv('YOUTUBE_CHANNEL_ID',''))

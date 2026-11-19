@@ -543,3 +543,15 @@ name glossary, rather than the expected full script. A second mismatch stops
 before rendering/upload; invalid timestamps and API errors do not trigger this
 retry. Logs report match percentage without exposing private narration. See the
 [OpenAI transcription prompting guide](https://developers.openai.com/api/docs/guides/speech-to-text).
+
+### League-relative club prediction model
+
+Club videos now estimate goals from the current competition's measured home/away
+scoring averages, each club's attack strength and its opponent's defensive
+weakness. Current-season samples are shrunk toward those league baselines; the
+independent Poisson score matrix supplies win/draw/loss probabilities and the
+score pick. Available lineup evidence is retained, while missing venue, lineups
+or league baselines use documented optional-data behaviour. The FIFA national-team
+model remains separate. See [the model and worked example](docs/league-poisson.md)
+and the reusable [prediction skill](skills/football-league-prediction/SKILL.md).
+This new club model is not yet chronologically backtested or calibrated.
