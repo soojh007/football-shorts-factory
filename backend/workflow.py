@@ -74,7 +74,7 @@ def prediction_upload_body(prediction):
     title=f'{h} vs {a} prediction | {prediction["kickoff"][:10]}'
     competition=prediction.get('competition') or f"Competition {prediction['league_id']}"
     fitted_strength=prediction['forecast'].get('assumptions',{}).get('strength_model',{}).get('applied',False)
-    model_note=('Outcome probabilities are not calibrated prospectively. FIFA-points strength coefficients are fitted and chronologically tested; lineup overlays and missing-data fallbacks remain experimental.\n' if fitted_strength else 'The applied league/form goal model and lineup overlays are experimental, not yet chronologically backtested or calibrated.\n')
+    model_note=('Outcome probabilities are not calibrated prospectively. FIFA-points strength coefficients are fitted and chronologically tested; lineup overlays and missing-data fallbacks remain experimental.\n' if fitted_strength else 'Outcome probabilities are not calibrated. The applied league/form goal model and lineup overlays are experimental, not yet chronologically backtested.\n')
     description=(f"{competition} prediction: {h} {score['home']}–{score['away']} {a}.\n" +
         ('Both official starting elevens were confirmed when this video was created.\n\n' if prediction.get('lineups',{}).get('confirmed') else 'Confirmed starting elevens were unavailable; this prediction uses other available information.\n\n') +
         f"{prediction['script']}\n\n{DISCLOSURE}\n"
