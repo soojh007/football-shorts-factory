@@ -73,10 +73,12 @@ def prediction_upload_body(prediction):
     score=prediction['forecast']['score_pick']
     title=f'{h} vs {a} prediction | {prediction["kickoff"][:10]}'
     competition=prediction.get('competition') or f"Competition {prediction['league_id']}"
+    fitted_strength=prediction['forecast'].get('assumptions',{}).get('strength_model',{}).get('applied',False)
+    model_note=('Outcome probabilities are not calibrated prospectively. FIFA-points strength coefficients are fitted and chronologically tested; lineup overlays and missing-data fallbacks remain experimental.\n' if fitted_strength else 'Outcome probabilities are not calibrated. The applied league/form goal model and lineup overlays are experimental, not yet chronologically backtested.\n')
     description=(f"{competition} prediction: {h} {score['home']}–{score['away']} {a}.\n" +
         ('Both official starting elevens were confirmed when this video was created.\n\n' if prediction.get('lineups',{}).get('confirmed') else 'Confirmed starting elevens were unavailable; this prediction uses other available information.\n\n') +
         f"{prediction['script']}\n\n{DISCLOSURE}\n"
-        'Outcome probabilities are not calibrated prospectively. FIFA-points strength coefficients are fitted and chronologically tested; lineup overlays and missing-data fallbacks remain experimental.\n'
+        + model_note + 'Score prediction covers regulation time including stoppage time; extra time and penalties are excluded.\n'
         'Match facts and lineups: Sportmonks.\n\n#Shorts #Football #Prediction')
     research=(prediction.get('context') or {}).get('web_research') or {}
     rank_urls=[row[key] for row in research.get('fifa_rankings',[]) for key in ('source_url','release_source_url')]
@@ -171,8 +173,25 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
         source=collect(client,fixture_id,league_id,now,fixture=fixture)
         report('Checking historical lineups, player ratings and venue context')
         source=enrich_history(source,now,report=report)
+    from backend.league_poisson import club_fixture,collect_league_results
+    source['league_fixtures']=[]
+    if club_fixture(source['fixture']):
+        report('Measuring current-season league home/away scoring baselines')
+        client=PrematchClient()
+        with client.session:
+            try:
+                source['league_fixtures']=collect_league_results(client,source['fixture'],now)
+            except (PrematchTemporaryError,PrematchDataUnavailableError):
+                source['league_model_availability']='temporarily_unavailable'
+                report('Optional league baseline unavailable; retaining the verified recent-form fallback.')
+    if club_fixture(source['fixture']):
+        save_json(out/f'{fixture_id}_league_model_input.json',{
+            'fixture_id':fixture_id,'league_id':league_id,'season_id':source['fixture'].get('season_id'),
+            'retrieved_at':datetime.now(timezone.utc).isoformat(),
+            'availability':source.get('league_model_availability','retrieved'),
+            'fixtures':source['league_fixtures']})
     # Validate data sufficiency before paying for web research.
-    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id)
+    contextual_prediction(source['fixture'],source['histories'],lineups,now,league_id=league_id,league_fixtures=source.get('league_fixtures'))
     from backend.freshness import latest_completed
     from backend.prediction import teams_for_preview
     report('Checking latest completed matches across accessible competitions')
@@ -206,7 +225,7 @@ def _run_workflow(fixture_id, *, out=None, upload=True, report=None):
     research['provider_latest']=latest
     # Timestamp the forecast after source retrieval, and recheck that kickoff is still in the future.
     forecast_at=datetime.now(timezone.utc)
-    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,forecast_at,league_id=league_id,research=research)
+    prediction=contextual_prediction(source['fixture'],source['histories'],lineups,forecast_at,league_id=league_id,research=research,league_fixtures=source.get('league_fixtures'))
     save_json(out/f'{fixture_id}_web_research.json',research)
     from backend.narration_templates import choose_template
     prediction['narration_template']=choose_template(out,os.getenv('YOUTUBE_CHANNEL_ID',''))

@@ -367,3 +367,26 @@ def test_every_palette_preserves_score_and_renders_every_section(contextual_inpu
         score=result['forecast']['score_pick']
         assert f"{score['home']} : {score['away']}" in recorded
         recorded.clear()
+
+
+def test_club_league_model_preserves_optional_inputs_and_avoids_double_venue_boost(contextual_input):
+    fixture,histories,lineups=contextual_input
+    for p in fixture['participants']:p['type']='domestic'
+    baseline=[]
+    for i in range(10):
+        row=deepcopy(histories['home'][i%5]);row['id']=400+i
+        baseline.append(row)
+    missing=deepcopy(lineups);missing['confirmed']=False
+    first=contextual_prediction(fixture,histories,missing,NOW,league_fixtures=baseline)
+    assert first['forecast']['model']=='league-attack-defence-poisson-v1'
+    assert first['forecast']['assumptions']['applied_venue_factors']=={'home':1,'away':1}
+    fixture['venue']=None
+    second=contextual_prediction(fixture,histories,missing,NOW,league_fixtures=baseline)
+    assert first['forecast']['model_goal_rates']==second['forecast']['model_goal_rates']
+    assert not second['lineups']['confirmed']
+    assert not second['forecast']['calibrated']
+    assert second['forecast']['score_matrix']['cells']
+    # An unavailable optional league sample keeps the original recent-form fallback.
+    fallback=contextual_prediction(fixture,histories,missing,NOW,league_fixtures=[])
+    assert fallback['forecast']['model']=='lineup-venue-form-poisson-v4'
+    assert fallback['forecast']['assumptions']['league_strength_model']['reason']=='insufficient_current_season_league_results'
