@@ -140,7 +140,7 @@ def contextual_prediction(fixture,histories,lineups,as_of,*,league_id=None,resea
     result['context']={'venue':venues['home'],'venue_by_team':venues,'lineup_profiles':profiles,
                        'fifa_rankings':rank_by_side,'latest_matches':(research or {}).get('provider_latest',{}),'web_research':research or {'performed':False,'claims':[],'sources':[]}}
     result['forecast']={'model':'lineup-fifa-strength-poisson-v4' if fitted else MODEL_VERSION if league_fit else 'lineup-venue-form-poisson-v4','calibrated':False,'probabilities':probabilities,
-        'outcome':outcome,'score_pick':pick,'score_pick_probability':score_mass,
+        'outcome':outcome,'score_pick':pick,'score_pick_probability':score_mass,'score_scope':'regulation_time_including_stoppage_excluding_extra_time_and_penalties',
         'model_goal_rates':{'home':home_rate,'away':away_rate},
         'overall_modal_score':matrix['overall_modal_score'],'overall_modal_score_probability':matrix['overall_modal_score_probability'],
         'score_matrix':matrix['score_matrix'],
