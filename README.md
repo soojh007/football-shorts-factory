@@ -433,9 +433,9 @@ For an already verified free clip/photo, optional `PLAYER_MEDIA_CATALOG_JSON` ac
 
 ## Create a video directly from the match list
 
-The hosted match picker now has **Create video** buttons. First expand **Connect GitHub**, follow the prefilled token link, select **Only select repositories → football-shorts-factory**, and grant only **Actions: read and write** (Metadata read is automatic). Use a fine-grained token with an expiry; classic broad tokens are rejected by the page. Paste it into the page’s password field and connect. Do not send the token in chat, commit it, or add it to a URL.
+The hosted match picker now has **Create video** buttons. First expand **Connect or unlock GitHub**, follow the prefilled token link, select **Only select repositories → football-shorts-factory**, and grant only **Actions: read and write** (Metadata read is automatic). Use a fine-grained token with an expiry; classic broad tokens are rejected by the page. Paste it into the page’s password field and connect. Do not send the token in chat, commit it, or add it to a URL.
 
-The token lives only in a private JavaScript field in this page’s memory. It is cleared from the input immediately, is never written to local/session storage or files, and is sent only in Authorization headers to the fixed api.github.com repository endpoints. Reload, close the tab or select Disconnect to clear it. Disconnecting does not cancel already submitted jobs; cancel those in Actions. Sportmonks/OpenAI/YouTube secrets remain server-side in Actions. The public site cannot start authenticated jobs for anonymous visitors and does not embed a repository token. A session-only token connection is needed because GitHub Pages has no server-side OAuth/token service.
+The unlocked token lives in a private JavaScript field and is sent only in Authorization headers to fixed api.github.com repository endpoints. Optional **Remember encrypted token on this device** stores AES-256-GCM ciphertext in browser localStorage, protected by a separate unlock password. Neither that password, a derived key nor a plaintext token is stored. Reloading or closing the page locks the connection; unlock with the password on your next visit. **Lock connection** also clears the page's secret inputs, and the connection locks after 15 minutes without activity. **Forget saved token** removes only this app's ciphertext on this browser; it does not revoke the GitHub token or cancel jobs. Sportmonks/OpenAI/YouTube secrets stay in GitHub Actions. No extra hosting account or backend is used.
 
 Clicking **Create video** dispatches the fixed production workflow on **main**, with the selected fixture ID, `auto_retry: true` and `validate_only: false`. There is no public-upload option. The returned job link opens the accepted GitHub run. Buttons are enabled only for future fixtures within two hours, matching the existing automatic waiting limit. A per-page sending/accepted guard blocks repeated clicks for the same fixture; uncertain network/server responses are never automatically resent. After a page reload, inspect Actions before resubmitting. Existing server-side upload receipts still prevent duplicate uploads. Jobs continue to use GitHub’s existing serialized production concurrency policy.
 
@@ -575,3 +575,41 @@ any known session URL and confirmed byte count are retained only in the private
 local receipt/encrypted cloud state, never public logs. Existing failed sessions
 whose URL was not recorded cannot be resumed from those old records. See the
 [official YouTube resumable protocol](https://developers.google.com/youtube/data/guides/using_resumable_upload_protocol).
+
+
+### Encrypted connection on this device
+
+Paste the fine-grained token once, leave **Remember encrypted token on this device**
+selected, and enter/confirm a separate 12–256 character unlock password. Use a strong
+unique passphrase, ideally several random words. On later visits, enter only that
+password. The password does not have to be and should not be your GitHub password.
+Your password manager may help fill it, but this page does not save it.
+
+The vault uses Web Crypto PBKDF2-HMAC-SHA-256 with 600,000 iterations, a fresh
+32-byte random salt and a fresh 12-byte AES-GCM nonce on every save. Encryption is
+AES-256-GCM with a 128-bit authentication tag and application-specific associated
+data. Derived keys are non-extractable and not persisted. Records are versioned,
+size-bounded and validated before key derivation; unexpected KDF parameters are
+rejected. Wrong passwords or altered ciphertext never produce a GitHub request.
+Save/unlock cancellation and connection generations prevent a pending operation
+from reconnecting after Lock or resurrecting a forgotten saved token.
+
+Only the dedicated `football-shorts-factory.github-token.v1` localStorage entry is
+used. Nothing is synchronized or uploaded by the app. Browser storage is scoped
+to this origin and browser profile, so set up each device separately. Clearing
+browser data removes the saved token. If the password is forgotten, there is no
+recovery service: forget the saved connection and save the token again. GitHub
+token expiry and revocation still apply. If Web Crypto/storage is unavailable or
+saving fails, the app can connect for the current visit and clearly reports that
+the token was not remembered.
+
+Encryption protects the stored token while locked. It does not protect an unlocked
+token from malicious page scripts, browser extensions or a compromised device;
+keep the token restricted to this repository and Actions permissions. JavaScript
+strings are released, not guaranteed to be securely erased from browser RAM. The
+existing restrictive Content Security Policy remains in effect.
+
+Validation: `node --test tests/test_workflow_client.mjs tests/test_token_vault.mjs`.
+Browser QA uses synthetic credentials and mocked GitHub requests; it never starts
+a real paid workflow. References: [Web Crypto key derivation](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey)
+and [OWASP PBKDF2 guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2).

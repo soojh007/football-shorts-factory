@@ -9,11 +9,11 @@ export function readiness(match,now=Date.now()){
  return {ready:true,message:'Create video'};
 }
 export class WorkflowConnection{
- #token='';#ready=false;#fetch;#states=new Map();
+ #token='';#ready=false;#fetch;#states=new Map();#generation=0;
  constructor(fetchImpl=globalThis.fetch.bind(globalThis)){this.#fetch=fetchImpl;}
  get connected(){return this.#ready&&Boolean(this.#token);}
  state(fixtureId){return this.#states.get(fixtureId)||null;}
- disconnect(){this.#token='';this.#ready=false;}
+ disconnect(){this.#generation++;this.#token='';this.#ready=false;}
  async #request(path,options={}){
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
   try{return await this.#fetch(API+path,{...options,credentials:'omit',referrerPolicy:'no-referrer',redirect:'error',cache:'no-store',signal:controller.signal,
@@ -21,18 +21,20 @@ export class WorkflowConnection{
   finally{clearTimeout(timer);}
  }
  async connect(token){
-  this.disconnect();
+  this.disconnect();const generation=this.#generation;
+  const check=()=>{if(this.#generation!==generation)throw Error('The connection was locked. Unlock or connect again.');};
   if(typeof token!=='string'||!/^github_pat_[A-Za-z0-9_]{20,500}$/.test(token.trim()))throw Error('Use a fine-grained GitHub token for this repository, with Actions: read and write.');
   this.#token=token.trim();
   try{
-   const repo=await this.#request('');
+   const repo=await this.#request('');check();
    if(repo.status===401)throw Error('GitHub rejected this token. Check its expiry and try a new token.');
    if(!repo.ok)throw Error('This token cannot access football-shorts-factory. Select only this repository when creating it.');
-   const workflow=await this.#request('/actions/workflows/'+WORKFLOW);
+   const workflow=await this.#request('/actions/workflows/'+WORKFLOW);check();
    if(!workflow.ok)throw Error('Allow Actions: read and write for football-shorts-factory.');
-   if((await workflow.json()).state!=='active')throw Error('The prediction workflow is disabled on GitHub.');
+   const data=await workflow.json();check();
+   if(data.state!=='active')throw Error('The prediction workflow is disabled on GitHub.');
    this.#ready=true;return true;
-  }catch(error){this.disconnect();throw Error(error instanceof TypeError||error.name==='AbortError'?'Could not connect to GitHub. Check your connection and try again.':error.message);}
+  }catch(error){if(this.#generation===generation)this.disconnect();throw Error(error instanceof TypeError||error.name==='AbortError'?'Could not connect to GitHub. Check your connection and try again.':error.message);}
  }
  async create(match,{validateOnly=false,now=Date.now()}={}){
   if(!this.connected)throw Error('Connect GitHub first.');
