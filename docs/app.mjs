@@ -1,13 +1,33 @@
-import {WorkflowConnection,readiness,ACTIONS_URL} from './workflow-client.mjs';
+import {WorkflowConnection,readiness,ACTIONS_URL} from './workflow-client.mjs?v=encrypted-vault-1';
+import {TokenVault,VaultError,IdleLock,VAULT_KEY,validatePassword} from './token-vault.mjs?v=encrypted-vault-1';
 const $=id=>document.getElementById(id),connection=new WorkflowConnection();
-let scheduleData=null,connecting=false;
+let scheduleData=null,connecting=false,operation=0,useOnce=false;
+const vault=new TokenVault();
+const idle=new IdleLock({connected:()=>connection.connected,lock:()=>lockConnection('Connection locked after 15 minutes without activity.')});
+function saved(){try{return vault.hasSaved();}catch{return false;}}
+function clearSecrets(){for(const id of ['githubToken','vaultPassword','vaultConfirm','unlockPassword'])$(id).value='';}
+function busy(value){connecting=value;for(const id of ['connect','unlock'])$(id).disabled=value;}
+function lockConnection(message){operation++;vault.cancelPending();connection.disconnect();clearSecrets();busy(false);useOnce=false;connectionView();renderMatches();if(message)$('connectionStatus').textContent=message;}
+function passwordOptions(){const show=$('rememberToken').checked&&!saved();$('saveOptions').hidden=!show;for(const id of ['vaultPassword','vaultConfirm'])$(id).required=show;}
 function connectionView(){
- $('connectionStatus').textContent=connection.connected?'Connected for this page session. Closing or reloading the page disconnects.':'Connect GitHub once to start videos from this page.';
- $('disconnect').hidden=!connection.connected;$('connectForm').hidden=connection.connected;
+ const remembered=saved(),ready=connection.connected;
+ $('connectForm').hidden=ready||(remembered&&!useOnce);$('unlockForm').hidden=ready||!remembered||useOnce;
+ $('forget').hidden=!remembered;$('useOnce').hidden=!remembered||ready||useOnce;
+ $('disconnect').hidden=!ready;$('disconnect').textContent=remembered?'Lock connection':'Disconnect';
+ $('rememberToken').disabled=!vault.supported||remembered;
+ if(!vault.supported||remembered)$('rememberToken').checked=false;
+ $('connectionStatus').textContent=ready?(useOnce?'Connected for this visit only. Your previously saved connection is unchanged.':remembered?'Connected. Your encrypted token is saved on this browser. Lock it when you finish.':'Connected for this visit only. No token is saved.'): (remembered?'Saved connection locked. Enter your unlock password; no token pasting needed.':'Connect GitHub once. Optionally save an encrypted token on this device.');
+ passwordOptions();
 }
-function openConnection(){ $('connectionPanel').open=true;$('githubToken').focus();$('connectionPanel').scrollIntoView({behavior:'smooth',block:'center'});}
+function openConnection(){
+ $('connectionPanel').open=true;
+ (saved()&&!useOnce?$('unlockPassword'):$('githubToken')).focus();
+ $('connectionPanel').scrollIntoView({behavior:'smooth',block:'center'});
+}
+
 function runLink(url,label){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';return a;}
 async function createVideo(match){
+ idle.check();
  if(!connection.connected){openConnection();return;}
  $('jobStatus').textContent='Starting '+match.home+' vs '+match.away+'…';
  const pending=connection.create(match);renderMatches();
@@ -43,11 +63,44 @@ async function loadMatches(){
  }catch(error){$('scheduleStatus').textContent=error.message;}finally{button.disabled=false;}
 }
 $('connectForm').addEventListener('submit',async event=>{
- event.preventDefault();if(connecting)return;connecting=true;const token=$('githubToken').value;$('githubToken').value='';$('connect').disabled=true;$('connectionStatus').textContent='Connecting to GitHub…';
- try{await connection.connect(token);connectionView();renderMatches();}catch(error){$('connectionStatus').textContent=error.message;}finally{connecting=false;$('connect').disabled=false;}
+ event.preventDefault();if(connecting)return;
+ let token=$('githubToken').value,password=$('vaultPassword').value,confirmation=$('vaultConfirm').value;
+ const remember=$('rememberToken').checked&&!saved(),current=++operation;
+ clearSecrets();busy(true);$('connectionStatus').textContent='Checking GitHub access…';
+ try{
+  if(remember){validatePassword(password);if(password!==confirmation)throw new VaultError('The unlock passwords do not match.');}
+  await connection.connect(token);if(current!==operation)return;
+  let saveError=null;
+  if(remember){
+   try{await vault.save(token,password);}catch(error){saveError=error instanceof VaultError?error.message:'Connected for this visit, but encrypted storage failed. The token was not saved.';}
+   if(current!==operation)return;
+  }
+  idle.touch();connectionView();renderMatches();if(saveError)$('connectionStatus').textContent=saveError;
+ }catch(error){if(current===operation){connectionView();$('connectionStatus').textContent=error.message;}}
+ finally{token='';password='';confirmation='';if(current===operation)busy(false);}
 });
-$('disconnect').addEventListener('click',()=>{connection.disconnect();$('githubToken').value='';connectionView();renderMatches();});
-window.addEventListener('pagehide',()=>{connection.disconnect();$('githubToken').value='';});
-window.addEventListener('pageshow',()=>{connectionView();renderMatches();});
+$('unlockForm').addEventListener('submit',async event=>{
+ event.preventDefault();if(connecting)return;
+ let password=$('unlockPassword').value,token='';const current=++operation;
+ clearSecrets();busy(true);$('connectionStatus').textContent='Unlocking saved connection…';
+ try{
+  token=await vault.unlock(password);if(current!==operation)return;
+  await connection.connect(token);if(current!==operation)return;
+  idle.touch();connectionView();renderMatches();
+ }catch(error){if(current===operation){connectionView();$('connectionStatus').textContent=error instanceof VaultError?error.message:error.message+' If the token expired, forget this saved connection and save a new token.';}}
+ finally{token='';password='';if(current===operation)busy(false);}
+});
+$('rememberToken').addEventListener('change',passwordOptions);
+$('disconnect').addEventListener('click',()=>lockConnection());
+$('useOnce').addEventListener('click',()=>{useOnce=true;$('rememberToken').checked=false;connectionView();$('githubToken').focus();});
+$('forget').addEventListener('click',()=>{
+ if(!window.confirm('Forget the encrypted token saved in this browser? You will need your GitHub token to save it again. This does not revoke the token or cancel running jobs.'))return;
+ try{operation++;vault.forget();$('rememberToken').checked=vault.supported;lockConnection('Saved connection removed from this browser.');}catch(error){lockConnection(error.message);}
+});
+window.addEventListener('pagehide',()=>lockConnection());
+window.addEventListener('pageshow',()=>{idle.check();connectionView();renderMatches();});
+window.addEventListener('storage',event=>{if(event.key===VAULT_KEY||event.key===null)lockConnection('Saved connection changed in another tab. Unlock it again.');});
+for(const name of ['pointerdown','keydown','scroll'])window.addEventListener(name,()=>{idle.check();idle.touch();},{passive:true});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)idle.check();});
 $('refresh').addEventListener('click',loadMatches);$('window').addEventListener('change',renderMatches);$('competition').addEventListener('change',renderMatches);
-setInterval(renderMatches,30000);connectionView();
+setInterval(()=>{idle.check();renderMatches();},30000);connectionView();
