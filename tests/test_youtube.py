@@ -175,3 +175,47 @@ def test_unknown_api_reason_does_not_leak_response():
     details, message = upload_failure_details(error)
     assert 'secret' not in json.dumps(details) + message
     assert details['http_status'] == 500
+
+
+def test_interrupted_known_session_resumes_without_second_insert(tmp_path,service,body):
+    video=tmp_path/'video.mp4';video.write_bytes(b'fake-video')
+    request=service.videos.return_value.insert.return_value
+    request.resumable_uri='https://www.googleapis.com/upload/youtube/v3/videos?upload_id=secret-session'
+    request._in_error_state=True
+    request.next_chunk.side_effect=[OSError('sensitive transport data'),
+        (None,{'id':'abcdefghijk','status':{'privacyStatus':'private'}})]
+    receipt,_=upload_video(service,video,body,CHANNEL,'hash',tmp_path/'receipt.json')
+    assert receipt['state']=='uploaded'
+    assert service.videos.return_value.insert.call_count==1
+    assert request.next_chunk.call_count==2
+
+
+def test_session_recovery_is_bounded_and_capability_url_is_never_logged(tmp_path,service,body):
+    video=tmp_path/'video.mp4';video.write_bytes(b'fake-video')
+    request=service.videos.return_value.insert.return_value
+    request.resumable_uri='https://www.googleapis.com/upload/youtube/v3/videos?upload_id=secret-session'
+    request.resumable_progress=256
+    request._in_error_state=True
+    request.next_chunk.side_effect=OSError('secret transport detail')
+    path=tmp_path/'receipt.json'
+    with pytest.raises(YouTubeError) as caught:
+        upload_video(service,video,body,CHANNEL,'hash',path)
+    assert 'secret' not in str(caught.value)
+    assert request.next_chunk.call_count==3
+    assert service.videos.return_value.insert.call_count==1
+    saved=json.loads(path.read_text())
+    assert saved['resumable_uri']==request.resumable_uri
+    assert saved['failure']['category']=='upload_connection_failure'
+    assert saved['confirmed_bytes']==256
+    assert saved['file_size']==len(b'fake-video')
+    assert saved['state']=='uploading'
+
+
+def test_unknown_session_cannot_be_blindly_retried(tmp_path,service,body):
+    video=tmp_path/'video.mp4';video.write_bytes(b'fake-video')
+    request=service.videos.return_value.insert.return_value
+    request.resumable_uri=None
+    request.next_chunk.side_effect=OSError('private detail')
+    with pytest.raises(YouTubeError):upload_video(service,video,body,CHANNEL,'hash',tmp_path/'receipt.json')
+    assert request.next_chunk.call_count==1
+    assert service.videos.return_value.insert.call_count==1

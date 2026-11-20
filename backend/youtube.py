@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
+import httplib2
 
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
@@ -84,6 +86,15 @@ def upload_failure_details(exc):
     """Expose only allowlisted codes, never response messages, URLs or headers."""
     details = {'category': 'transport_or_local_failure'}
     explanation = 'The upload connection or local operation failed.'
+    if isinstance(exc, httplib2.RedirectMissingLocation):
+        details['category']='resumable_protocol_error'
+        explanation='The resumable upload transport misinterpreted a chunk acknowledgement.'
+    elif isinstance(exc, (socket.timeout,TimeoutError)):
+        details['category']='upload_timeout'
+        explanation='The upload connection timed out.'
+    elif isinstance(exc, (OSError,httplib2.HttpLib2Error)):
+        details['category']='upload_connection_failure'
+        explanation='The upload connection was interrupted.'
     if isinstance(exc, HttpError):
         status = getattr(exc.resp, 'status', None)
         if type(status) is int and 100 <= status <= 599:
@@ -124,13 +135,23 @@ def upload_video(service, video_path, body, channel_id, video_hash, receipt_path
         handle.flush()
         os.fsync(handle.fileno())
     stage = 'preparing_request'
+    request=None
     try:
         media = MediaFileUpload(str(video_path), mimetype='video/mp4', chunksize=8 * 1024 * 1024, resumable=True)
         request = service.videos().insert(part='snippet,status', body=body, media_body=media, notifySubscribers=False)
         response = None
+        recoveries=0
         while response is None:
             stage = 'sending_upload'
-            _, response = request.next_chunk(num_retries=3)
+            try:
+                _, response = request.next_chunk(num_retries=3)
+            except (OSError,httplib2.HttpLib2Error):
+                # A known session can be queried/resumed, never a second videos.insert.
+                if (recoveries>=2 or not isinstance(request.resumable_uri,str)
+                        or not request.resumable_uri or not request._in_error_state):
+                    raise
+                recoveries+=1
+                continue
         stage = 'saving_response'
         video_id = response.get('id')
         if not isinstance(video_id, str) or not VIDEO_PATTERN.fullmatch(video_id):
@@ -147,7 +168,14 @@ def upload_video(service, video_path, body, channel_id, video_hash, receipt_path
         details, explanation = upload_failure_details(exc)
         details['stage'] = stage
         try:
-            save_json(receipt_path, {**initial, 'failure': details})
+            recovery={}
+            uri=getattr(request,'resumable_uri',None)
+            progress=getattr(request,'resumable_progress',None)
+            if isinstance(uri,str) and uri.startswith('https://'):
+                # Capability URL stays local/inside encrypted state; never log it.
+                recovery={'resumable_uri':uri,'file_size':video_path.stat().st_size}
+                if type(progress) is int:recovery['confirmed_bytes']=progress
+            save_json(receipt_path, {**initial, 'failure': details,**recovery})
         except Exception:
             pass  # Keep the original reservation if diagnostic persistence fails.
         codes = ', '.join(str(details[k]) for k in ('http_status', 'reason') if k in details)

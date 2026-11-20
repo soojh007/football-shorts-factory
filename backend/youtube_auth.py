@@ -12,6 +12,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 import google_auth_httplib2
 from googleapiclient.discovery import build
+from googleapiclient.http import build_http
 import httplib2
 from oauthlib.oauth2 import OAuth2Error
 
@@ -76,9 +77,16 @@ def load_credentials(*, login=False):
         raise YouTubeError('Unable to authorize YouTube; check OAuth setup, consent and connectivity. No credentials were displayed.') from None
 
 
+def youtube_http():
+    # Google's factory excludes HTTP 308 redirects: YouTube uses 308 for chunk ACKs.
+    transport=build_http()
+    transport.timeout=60
+    return transport
+
+
 def youtube_service(credentials):
     try:
-        transport = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http(timeout=60))
+        transport = google_auth_httplib2.AuthorizedHttp(credentials, http=youtube_http())
         return build('youtube', 'v3', http=transport, cache_discovery=False)
     except Exception:
         raise YouTubeError('Unable to initialize the YouTube API client.') from None
