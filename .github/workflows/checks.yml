@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - run: node --test tests/test_workflow_client.mjs
+      - run: node --test tests/test_workflow_client.mjs tests/test_session_client.mjs auth-worker/test/*.test.mjs
       - run: python -m pytest -q
       - name: Check optional FIFA table access
         run: python -m backend.fifa_rankings --diagnostics --codes BRA SGP

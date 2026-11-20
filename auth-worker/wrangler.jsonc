@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "football-shorts-dashboard",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-11-20",
+  "workers_dev": true,
+  "observability": {
+    "enabled": false
+  },
+  "vars": {
+    "REPOSITORY": "soojh007/football-shorts-factory",
+    "ALLOWED_GITHUB_LOGIN": "soojh007",
+    "ASSET_BASE_URL": "https://soojh007.github.io/football-shorts-factory/",
+    "SESSION_DAYS": "30",
+    "ALLOWED_GITHUB_USER_ID": "31023831",
+    "REPOSITORY_ID": "1457268656"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "football-shorts-auth"
+    }
+  ]
+}

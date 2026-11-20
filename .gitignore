@@ -241,3 +241,10 @@ client_secrets*.json
 youtube_token*.json
 token.json
 .factory-state/
+
+# Secure dashboard local runtime and dependencies
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+auth-worker/dist/

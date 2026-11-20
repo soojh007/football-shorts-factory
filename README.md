@@ -575,3 +575,12 @@ any known session URL and confirmed byte count are retained only in the private
 local receipt/encrypted cloud state, never public logs. Existing failed sessions
 whose URL was not recorded cannot be resumed from those old records. See the
 [official YouTube resumable protocol](https://developers.google.com/youtube/data/guides/using_resumable_upload_protocol).
+
+### Secure persistent dashboard login
+
+The optional `auth-worker/` backend adds owner-only GitHub App sign-in with a
+30-day HttpOnly session cookie, encrypted server-side tokens and persistent
+request deduplication. No PAT is stored in browser storage. The existing launch
+page switches to it only after the public `docs/auth-config.json` is configured;
+unconfigured deployments preserve the working memory-only token fallback.
+See [deployment and one-time account setup](docs/secure-login.md).
