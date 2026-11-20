@@ -564,3 +564,14 @@ scores/winner flags from model inputs, and compares the core league model with
 league-average and previous recent-form baselines. It makes no OpenAI, video or
 upload calls. See the [2026–27 EPL round 10 report](docs/backtests/epl-2026-27-round10.md)
 for results, limitations and replay commands.
+
+YouTube resumable uploads use Google's HTTP transport factory, which correctly
+passes HTTP 308 chunk acknowledgements to the uploader instead of treating them
+as redirects. Multi-chunk files are tested against a local protocol server.
+An interrupted upload may retry at most twice **within its existing known
+session**; the client queries the committed byte range before resuming. No second
+`videos.insert` is started. Unknown sessions remain blocked. On terminal failure,
+any known session URL and confirmed byte count are retained only in the private
+local receipt/encrypted cloud state, never public logs. Existing failed sessions
+whose URL was not recorded cannot be resumed from those old records. See the
+[official YouTube resumable protocol](https://developers.google.com/youtube/data/guides/using_resumable_upload_protocol).
