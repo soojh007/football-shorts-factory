@@ -141,4 +141,4 @@ def draw_personal_frame(prediction,caption,progress,animation,*,time_seconds=0):
             text_block(draw,text,(92,y+14,988,y+110),47,WHITE,'left',2)
     draw.rounded_rectangle((48,1470,1032,1750),radius=28,fill=WHITE)
     text_block(draw,caption['text'],(93,1492,987,1722),60,BG,max_lines=3)
-    return social_canvas(image)
+    return social_canvas(image, match_title=f'{home} × {away}')
