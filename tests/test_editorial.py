@@ -21,7 +21,7 @@ def editorial_input():
 @pytest.fixture
 def draft():
     return {'pick_side':'home','featured_player_ids':[382072,20335304],'sections':[
-        {'kind':'hook','text':"I'm backing Tenerife in this one. For me, there is enough in their recent games to make a narrow win the call I like.",'evidence_ids':['home_form']},
+        {'kind':'hook','text':"Can Tenerife win this one? I'm backing them. Their recent league games make a narrow win the call I like.",'evidence_ids':['home_form']},
         {'kind':'players','text':"Enric Gallego starts for Tenerife, and Jordi Escobar is in Ceuta's eleven. Those are the names that catch my eye when I look at this matchup.",'evidence_ids':['player_382072','player_20335304']},
         {'kind':'players','text':"Tenerife have scored 8 goals across their last 5 league matches. That gives me a concrete reason to back them here. I can see this being close right through to the finish. That is what pushes me towards them in this particular matchup.",'evidence_ids':['home_form']} ]}
 
@@ -92,6 +92,12 @@ def test_curly_apostrophe_is_personal_voice(editorial_input,draft):
 def test_hook_must_lead_with_personal_pick(editorial_input,draft):
     draft['sections'][0]['text']='Something has got to give in this matchup tonight.'
     with pytest.raises(EditorialError,match='first-person pick'): validate_draft(draft,editorial_input,evidence_packet(editorial_input))
+
+
+def test_question_must_be_the_first_sentence(editorial_input,draft):
+    draft['sections'][0]['text']="I'm backing Tenerife. Can they win this one?"
+    with pytest.raises(EditorialError,match='Begin the narration'):
+        validate_draft(draft,editorial_input,evidence_packet(editorial_input))
 
 
 def test_editorial_pick_side_matches_score(editorial_input,draft):
@@ -205,6 +211,7 @@ def test_four_formats_have_distinct_openings(editorial_input):
         result=grounded_backup(editorial_input,evidence_packet(editorial_input),[])
         openings.append(result['sections'][0]['text'])
     assert len(set(openings))==4
+    assert all('?' in opening.split('. ')[0] for opening in openings)
 
 
 @pytest.mark.parametrize('index',range(4))

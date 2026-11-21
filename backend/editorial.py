@@ -11,7 +11,7 @@ import requests
 
 from backend.narration_templates import template_for,closing_line,backup_draft,latest_sentence
 
-VERSION='personal-editorial-v4'
+VERSION='personal-editorial-v5'
 
 class EditorialError(ValueError): pass
 
@@ -90,6 +90,8 @@ def validate_draft(value,prediction,packet):
         errors.append('Include a hook first and at least one players scene.')
     if not re.search(r"\b(i|i'm|i've|my)\b",folded(sections[0]['text'])):
         errors.append('Open with a direct first-person pick: I am backing the selected outcome. No scene-setting introduction.')
+    if not re.match(r'^[^!?]+\?', sections[0]['text'].split('. ')[0]):
+        errors.append('Begin the narration with a short football question, before any statements.')
     facts=packet['evidence']
     if prediction.get('narration_template'):
         index=template_for(prediction)['index'];opening=sections[0]
@@ -180,7 +182,7 @@ def grounded_backup(prediction,packet,diagnostics):
 
 
 PROMPT="""Write a personal football prediction Short, as a fan talking to one friend.
-Set pick_side to home/draw/away matching the supplied score_pick. Follow the assigned narration format for the opening and scene order; the verdict can come later in results-first, players-first and question formats. Keep the hook personal in every format. Do not speak the predicted score numbers yet.
+Set pick_side to home/draw/away matching the supplied score_pick. Follow the assigned narration format for the opening and scene order; the verdict can come later in results-first, players-first and question formats. Begin EVERY format with a short, match-specific football question as the first sentence, ending in a question mark. Then answer it in first person and follow the assigned evidence order. Keep it personal; no invented stakes or factual premises. Vary the question across videos. Do not speak the predicted score numbers yet.
 Write exactly THREE short scenes, 100–115 words TOTAL before the score reveal that the app adds. Use hook, players, players; use research/venue only if genuinely important. The input highlights at most four confirmed starters. Name 2–4 of those starters only, at least one from each team, copying their full names exactly. Select those IDs in featured_player_ids and name nobody else.
 If no confirmed starters are supplied, set featured_player_ids to [], name no players, and build the three scenes around available team form, venue and sourced reports. Do not discuss missing information.
 Always state each supplied home_latest/away_latest result and opponent, especially a defeat by the side you back. Cite those IDs. Latest results are separate from selected-competition aggregates; preserve their actual competition labels. You may speak supplied past-match scorelines, but never announce the future score pick until the server-owned ending.
