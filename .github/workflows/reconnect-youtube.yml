@@ -1,0 +1,67 @@
+name: Preserve upload records for YouTube reconnection
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: factory-private-upload
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Verify new authorization and re-encrypt existing records
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OLD_OAUTH: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON }}
+          NEW_OAUTH: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON_NEXT }}
+          YOUTUBE_CHANNEL_ID: ${{ vars.YOUTUBE_CHANNEL_ID }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, sys, tempfile
+          from pathlib import Path
+          from google.oauth2.credentials import Credentials
+          from google.auth.transport.requests import Request
+          from backend.cloud_receipts import restore_latest, pack_receipts
+          from backend.youtube_auth import SCOPES, youtube_service
+          from backend.youtube import current_channel
+          try:
+              new = os.environ['NEW_OAUTH']
+              credentials = Credentials.from_authorized_user_info(json.loads(new), SCOPES)
+              credentials.refresh(Request())
+              service = youtube_service(credentials)
+              try:
+                  channel = current_channel(service)
+                  if channel['id'] != os.environ['YOUTUBE_CHANNEL_ID']:
+                      raise ValueError('Channel mismatch')
+              finally:
+                  service.close()
+              with tempfile.TemporaryDirectory() as folder:
+                  count = restore_latest(Path(folder), os.environ['OLD_OAUTH'])
+                  encrypted = pack_receipts(Path(folder), new)
+              target = Path('.factory-state/receipts.enc')
+              target.parent.mkdir(mode=0o700, exist_ok=True)
+              target.write_bytes(encrypted)
+              print(f'New YouTube authorization verified; {count} upload records preserved. No upload started.')
+          except Exception:
+              print('Reconnection state migration failed. Existing OAuth secret was not changed; no upload started.', file=sys.stderr)
+              sys.exit(1)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: factory-private-state
+          path: .factory-state/receipts.enc
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
