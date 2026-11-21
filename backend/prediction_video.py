@@ -9,7 +9,7 @@ from backend.video import text_block
 from backend.video_layout import social_canvas
 
 INK, CREAM, CORAL, GREEN = '#122a30', '#f4f1e7', '#fc654c', '#c0ff69'
-STYLE_VERSION = 13
+STYLE_VERSION = 14
 
 
 def section_at(prediction, word):
