@@ -70,7 +70,8 @@ def render_prediction(prediction,out):
     prefix=f"{prediction['fixture_id']}_prediction"
     audio_path=out/f'{prefix}_narration.wav'
     audio_metadata=out/f'{prefix}_narration.json'
-    settings={'script_sha256':sha256(prediction['script'].encode()),'model':'gpt-4o-mini-tts','voice':'coral','speed':1.1}
+    from backend.presentation import NARRATION_SPEED
+    settings={'script_sha256':sha256(prediction['script'].encode()),'model':'gpt-4o-mini-tts','voice':'coral','speed':NARRATION_SPEED}
     if prediction.get('context'):
         from backend.presentation import speech_settings
         settings.update(speech_settings(prediction))

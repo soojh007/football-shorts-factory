@@ -1,5 +1,6 @@
 """Versioned visual and narrator identities, selected before writing or rendering."""
 VERSION = 'four-palettes-personalities-v1'
+NARRATION_SPEED = 1.3
 PALETTES = (
     dict(name='Stadium green', bg='#101814', text='#faf5e8', accent='#c2ff67', secondary='#ff8055',
          surface='#263a2c', orb='#193124', outline='#547660', pitch='#8eaf7d', shirt='#385c40', shadow='#050a07'),
@@ -54,7 +55,7 @@ def choose_presentation(successful_uploads):
 
 def speech_settings(prediction):
     persona=personality_for(prediction)
-    return dict(delivery=VERSION,voice=persona['voice'],speed=1.0,
+    return dict(delivery=VERSION,voice=persona['voice'],speed=NARRATION_SPEED,
         instructions=('Read the supplied script exactly in English. Use a light, natural Singaporean English accent, '
         'clear to international listeners, consistent without exaggeration or caricature. '
         'Do not change words, add Singlish particles or use a newsreader tone. '+persona['delivery']))
