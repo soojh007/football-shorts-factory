@@ -3,14 +3,14 @@ import json
 from pathlib import Path
 import re
 
-VERSION='four-personal-formats-v1'
+VERSION='four-personal-formats-v2'
 TEMPLATES=(
     {'index':0,'name':'The direct pick','order':['verdict','players','case'],
-     'instructions':'Lead with your personal verdict, without the score. Then introduce the confirmed starters you are watching. Finish the argument with the latest results and any useful FIFA/venue context. Punchy, confident fan-to-friend delivery; no stock scene-setting.'},
+     'instructions':'Open with a short question about whether your selected side can win (or whether the sides will finish level). Answer with your personal verdict, without the score. Then introduce the confirmed starters you are watching. Finish the argument with the latest results and any useful FIFA/venue context. Punchy, confident fan-to-friend delivery; no stock scene-setting.'},
     {'index':1,'name':'The recent-result reaction','order':['results','players','verdict'],
-     'instructions':'Start with the latest completed results and your first-person reaction to them, not with the pick. Move to the confirmed starters and the football case. Only then give your verdict, without its score. React to a defeat honestly; never invent a bounce-back record or claim a winning streak.'},
+     'instructions':'Begin with a short question about what the supplied recent results mean for this matchup. Answer with the latest completed results and your first-person reaction to them, not with the pick. Move to the confirmed starters and the football case. Only then give your verdict, without its score. React to a defeat honestly; never invent a bounce-back record or claim a winning streak.'},
     {'index':2,'name':'The players-first take','order':['players','results','verdict'],
-     'instructions':'Open in first person with the exact names of the confirmed starters that catch your eye, one from each side. Follow with each latest result, then explain your verdict and any verified FIFA strength context. Do not invent player abilities. If starters are unavailable, open with a concrete supplied team-form comparison instead, without discussing missing data.'},
+     'instructions':'Start with a short question about the players you are watching in this matchup. Answer in first person with the exact names of the confirmed starters that catch your eye, one from each side. Follow with each latest result, then explain your verdict and any verified FIFA strength context. Do not invent player abilities. If starters are unavailable, open with a concrete supplied team-form comparison instead, without discussing missing data.'},
     {'index':3,'name':'The matchday question','order':['question','results','players_verdict'],
      'instructions':'Open with a short football question about this matchup plus your personal reaction. Use a genuine question mark. Contrast the latest results, then bring in the named starters and state where you land. The question is a subjective match opinion, never a claim about injuries, stakes or tactics absent from evidence. Avoid the stock opening "Something has got to give".'},
 )
@@ -81,7 +81,13 @@ def backup_draft(prediction,packet):
     rank_keys=[f'{s}_fifa_rank' for s in ('home','away') if f'{s}_fifa_rank' in facts]
     rank_label='live FIFA rankings' if any(facts[k].get('official') is False for k in rank_keys) else 'official FIFA rankings'
     rank=('In the '+rank_label+', '+'; '.join(f"{facts[k]['team']} are ranked {facts[k]['rank']}" for k in rank_keys)+'.') if rank_keys else ''
-    def scene(kind,text,keys):return {'kind':kind,'text':text.strip(),'evidence_ids':list(dict.fromkeys(keys))}
+    def scene(kind,text,keys):
+        if kind=='hook' and index<3:
+            question=(f'Can {pick} win this one?' if side!='draw' else f'Will {home} and {away} finish level?',
+                      f'What do I make of {home} versus {away}?',
+                      f'Who am I watching in {home} versus {away}?')[index]
+            text=question+' '+text
+        return {'kind':kind,'text':text.strip(),'evidence_ids':list(dict.fromkeys(keys))}
     form_keys=['home_form','away_form'];name_keys=player_keys or form_keys
     def assemble(form_text):
         if index==0:
