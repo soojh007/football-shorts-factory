@@ -6,9 +6,10 @@ from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw
 
 from backend.video import text_block
+from backend.video_layout import social_canvas
 
 INK, CREAM, CORAL, GREEN = '#122a30', '#f4f1e7', '#fc654c', '#c0ff69'
-STYLE_VERSION = 12
+STYLE_VERSION = 13
 
 
 def section_at(prediction, word):
@@ -159,4 +160,4 @@ def draw_prediction_frame(prediction, caption, progress, *, animation=1.0,time_s
     draw.rounded_rectangle((56,1392,1024,1655),radius=30,fill=CORAL)
     text_block(draw,caption['text'],(104,1418,976,1625),59,INK,max_lines=3)
     # No footer text or progress bar: leave platform controls clear.
-    return image
+    return social_canvas(image)
